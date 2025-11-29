@@ -1,13 +1,19 @@
-// Library တွေကို URL အပြည့်နဲ့ ခေါ်သုံးထားလို့ deno.json မလိုတော့ပါဘူး
 import { Hono } from "https://deno.land/x/hono@v3.11.7/mod.ts";
 
 const app = new Hono();
 
-// --- ဒီနေရာမှာ အစ်ကို့အကောင့် အချက်အလက်တွေ ဖြည့်ပါ ---
+// --- Configuration ---
 const CONFIG = {
-  domain: "https://qyun.org", 
-  email: "sswe0014@gmail.com",       
-  password: "Soekyawwin@93", 
+  domain: "https://qyun.org",
+  email: "YOUR_EMAIL_HERE",      
+  password: "YOUR_PASSWORD_HERE",
+  
+  // 🔥 အရေးကြီးဆုံးနေရာ - Channel 2 ရဲ့ ID
+  // အများအားဖြင့် "2" သို့မဟုတ် "1" ဖြစ်တတ်တယ်။ စမ်းကြည့်ပါ။
+  // အဆင်မပြေရင် Network Tab မှာ "policy_id" ကို ရှာကြည့်ရပါမယ်။
+  policyId: "2", 
+  
+  chunkSize: 9 * 1024 * 1024, // 9MB (413 Error မတက်အောင် ခွဲတင်မည်)
 };
 
 app.get("/", (c) => {
@@ -17,22 +23,30 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Uploader</title>
+      <title>Qyun Channel 2 Uploader</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-blue-400">Qyun.org Uploader</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Channel 2 Uploader</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
-        <input type="text" id="urlInput" placeholder="https://example.com/video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
+        <input type="text" id="urlInput" placeholder="https://..." class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <label class="block mb-2 text-sm text-gray-400">Filename (Optional)</label>
-        <input type="text" id="nameInput" placeholder="my_movie.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
+        <label class="block mb-2 text-sm text-gray-400">Filename</label>
+        <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <button onclick="startUpload()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold transition">Upload to Qyun</button>
+        <div class="mb-4">
+             <label class="text-xs text-gray-400">Upload Channel:</label>
+             <span class="bg-blue-900 text-blue-200 text-xs px-2 py-1 rounded">Channel 2 (ID: ${CONFIG.policyId})</span>
+        </div>
+
+        <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Upload</button>
         
-        <div id="status" class="mt-4 text-center text-sm text-yellow-400"></div>
+        <div class="mt-4 bg-gray-900 rounded-full h-2.5 overflow-hidden">
+             <div id="progressBar" class="bg-green-500 h-2.5 rounded-full" style="width: 0%"></div>
+        </div>
+        <div id="status" class="mt-2 text-center text-sm text-yellow-400">Ready</div>
       </div>
 
       <script>
@@ -41,33 +55,49 @@ app.get("/", (c) => {
           const name = document.getElementById('nameInput').value;
           const status = document.getElementById('status');
           const btn = document.getElementById('btn');
+          const bar = document.getElementById('progressBar');
 
-          if(!url) return alert("Link ထည့်ပါ");
-
+          if(!url) return alert("Link လိုပါတယ်");
           btn.disabled = true;
-          btn.innerText = "Uploading... (Please Wait)";
-          status.innerText = "Deno is downloading & uploading to Qyun...";
 
           try {
-            const res = await fetch('/upload', {
-              method: 'POST',
-              headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ url, name })
+            status.innerText = "Connecting to Qyun...";
+            const startRes = await fetch('/api/init', {
+                method: 'POST', 
+                body: JSON.stringify({url, name})
             });
-            const data = await res.json();
+            const startData = await startRes.json();
+            
+            if(startData.error) throw new Error(startData.error);
+            
+            const jobId = startData.jobId;
+            
+            const interval = setInterval(async () => {
+                const poll = await fetch('/api/status/' + jobId);
+                const pData = await poll.json();
+                
+                if(pData.status === 'uploading') {
+                    const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
+                    bar.style.width = pct + '%';
+                    status.innerText = \`Uploading to Channel 2: \${pct}% (\${(pData.uploaded/1024/1024).toFixed(1)} MB)\`;
+                } else if(pData.status === 'completed') {
+                    clearInterval(interval);
+                    bar.style.width = '100%';
+                    status.innerText = "✅ Upload Complete!";
+                    status.classList.replace('text-yellow-400', 'text-green-400');
+                    btn.disabled = false;
+                } else if(pData.status === 'failed') {
+                    clearInterval(interval);
+                    status.innerText = "❌ Error: " + pData.error;
+                    status.classList.replace('text-yellow-400', 'text-red-400');
+                    btn.disabled = false;
+                }
+            }, 2000);
 
-            if(data.status === 'Success') {
-              status.innerText = "✅ Upload Success! Check your Qyun account.";
-              status.className = "mt-4 text-center text-sm text-green-400";
-            } else {
-              status.innerText = "❌ Error: " + data.msg;
-              status.className = "mt-4 text-center text-sm text-red-400";
-            }
           } catch(e) {
             status.innerText = "Error: " + e.message;
+            btn.disabled = false;
           }
-          btn.disabled = false;
-          btn.innerText = "Upload to Qyun";
         }
       </script>
     </body>
@@ -76,43 +106,110 @@ app.get("/", (c) => {
   return c.html(html);
 });
 
-app.post("/upload", async (c) => {
+const jobs = new Map();
+
+app.post("/api/init", async (c) => {
   const { url, name } = await c.req.json();
-  if (!url) return c.json({ status: "Failed", msg: "No URL" });
+  const jobId = crypto.randomUUID();
+  let filename = name && name.trim() ? name.trim() : url.split('/').pop().split('?')[0];
+  if (!filename.includes('.')) filename += '.mp4';
 
-  try {
-    // ၁။ Filename သတ်မှတ်ခြင်း
-    let filename = name && name.trim() ? name.trim() : url.split('/').pop().split('?')[0];
-    if (!filename.endsWith('.mp4') && !filename.endsWith('.mkv')) filename += '.mp4';
+  jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
 
-    // ၂။ Source Video ကို Deno က လှမ်းဆွဲခြင်း
-    const sourceRes = await fetch(url);
-    if (!sourceRes.ok) return c.json({ status: "Failed", msg: "Source Link error" });
+  processChunkUpload(jobId, url, filename).catch(err => {
+      console.error(err);
+      jobs.set(jobId, { status: 'failed', error: err.message });
+  });
 
-    // ၃။ WebDAV သုံးပြီး Qyun ကို တင်ခြင်း
-    const webdavUrl = `${CONFIG.domain}/dav/uploads/${filename}`;
-    
-    // Email နဲ့ Password ကို ကုဒ်ဝှက်ခြင်း (Basic Auth)
-    const auth = btoa(`${CONFIG.email}:${CONFIG.password}`);
-
-    const uploadRes = await fetch(webdavUrl, {
-      method: "PUT",
-      headers: {
-        "Authorization": `Basic ${auth}`,
-        "Content-Type": "application/octet-stream", 
-      },
-      body: sourceRes.body, 
-    });
-
-    if (uploadRes.ok || uploadRes.status === 201) {
-      return c.json({ status: "Success", path: filename });
-    } else {
-      return c.json({ status: "Failed", msg: `Qyun Error: ${uploadRes.status} ${uploadRes.statusText}` });
-    }
-
-  } catch (e) {
-    return c.json({ status: "Failed", msg: e.message });
-  }
+  return c.json({ jobId });
 });
+
+app.get("/api/status/:id", (c) => {
+    const id = c.req.param('id');
+    return c.json(jobs.get(id) || { status: 'unknown' });
+});
+
+async function processChunkUpload(jobId, sourceUrl, filename) {
+    try {
+        // Step 1: Login
+        const loginRes = await fetch(`${CONFIG.domain}/api/v1/user/session`, {
+            method: 'POST',
+            body: JSON.stringify({ userName: CONFIG.email, Password: CONFIG.password })
+        });
+        const loginData = await loginRes.json();
+        if(loginData.code !== 0) throw new Error("Login Failed: " + loginData.msg);
+        
+        let cookies = loginRes.headers.get("set-cookie");
+        if(cookies) cookies = cookies.split(',').map(c => c.split(';')[0]).join('; ');
+
+        // Step 2: Get Size
+        const headRes = await fetch(sourceUrl, { method: 'HEAD' });
+        const totalSize = Number(headRes.headers.get('content-length'));
+        if(!totalSize) throw new Error("Source file size unknown");
+
+        jobs.set(jobId, { status: 'uploading', uploaded: 0, total: totalSize });
+
+        // Step 3: Init Upload with POLICY ID (Channel 2)
+        const initRes = await fetch(`${CONFIG.domain}/api/v1/file/create`, {
+            method: 'PUT',
+            headers: { "Cookie": cookies, "Content-Type": "application/json" },
+            body: JSON.stringify({
+                path: "/",
+                size: totalSize,
+                name: filename,
+                policy_id: CONFIG.policyId, // 🔥 Channel 2 ID သုံးထားသည်
+                type: "file"
+            })
+        });
+        const initData = await initRes.json();
+        if(initData.code !== 0) throw new Error("Init Failed: " + initData.msg);
+        
+        const sessionID = initData.data;
+
+        // Step 4: Chunked Streaming
+        const sourceRes = await fetch(sourceUrl);
+        const reader = sourceRes.body.getReader();
+        let chunkBuffer = new Uint8Array(0);
+        let uploadedSize = 0;
+        let chunkIndex = 0;
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                if (chunkBuffer.length > 0) {
+                    await uploadSingleChunk(sessionID, chunkIndex, chunkBuffer, cookies);
+                    uploadedSize += chunkBuffer.length;
+                    jobs.set(jobId, { status: 'uploading', uploaded: uploadedSize, total: totalSize });
+                }
+                break;
+            }
+            const newBuffer = new Uint8Array(chunkBuffer.length + value.length);
+            newBuffer.set(chunkBuffer);
+            newBuffer.set(value, chunkBuffer.length);
+            chunkBuffer = newBuffer;
+
+            while (chunkBuffer.length >= CONFIG.chunkSize) {
+                const chunkToSend = chunkBuffer.slice(0, CONFIG.chunkSize);
+                chunkBuffer = chunkBuffer.slice(CONFIG.chunkSize);
+                await uploadSingleChunk(sessionID, chunkIndex, chunkToSend, cookies);
+                chunkIndex++;
+                uploadedSize += chunkToSend.length;
+                jobs.set(jobId, { status: 'uploading', uploaded: uploadedSize, total: totalSize });
+            }
+        }
+        jobs.set(jobId, { status: 'completed', uploaded: totalSize, total: totalSize });
+    } catch (e) {
+        jobs.set(jobId, { status: 'failed', error: e.message });
+    }
+}
+
+async function uploadSingleChunk(sessionID, index, data, cookies) {
+    const uploadRes = await fetch(`${CONFIG.domain}/api/v1/file/upload/${sessionID}/${index}`, {
+        method: 'POST',
+        headers: { "Cookie": cookies, "Content-Type": "application/octet-stream" },
+        body: data
+    });
+    if(!uploadRes.ok) throw new Error(`Chunk ${index} failed`);
+}
 
 Deno.serve(app.fetch);
