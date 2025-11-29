@@ -1,11 +1,13 @@
-import { Hono } from "hono";
+// Library တွေကို URL အပြည့်နဲ့ ခေါ်သုံးထားလို့ deno.json မလိုတော့ပါဘူး
+import { Hono } from "https://deno.land/x/hono@v3.11.7/mod.ts";
+
 const app = new Hono();
 
 // --- ဒီနေရာမှာ အစ်ကို့အကောင့် အချက်အလက်တွေ ဖြည့်ပါ ---
 const CONFIG = {
   domain: "https://qyun.org", 
-  email: "sswe0014@gmail.com",       // ဥပမာ: soethu@gmail.com
-  password: "Soekyawwin@93", // ဥပမာ: password123
+  email: "sswe0014@gmail.com",       
+  password: "Soekyawwin@93", 
 };
 
 app.get("/", (c) => {
@@ -88,7 +90,6 @@ app.post("/upload", async (c) => {
     if (!sourceRes.ok) return c.json({ status: "Failed", msg: "Source Link error" });
 
     // ၃။ WebDAV သုံးပြီး Qyun ကို တင်ခြင်း
-    // Qyun (Cloudreve) ရဲ့ WebDAV လမ်းကြောင်းက များသောအားဖြင့် /dav/uploads/ ဖြစ်ပါတယ်
     const webdavUrl = `${CONFIG.domain}/dav/uploads/${filename}`;
     
     // Email နဲ့ Password ကို ကုဒ်ဝှက်ခြင်း (Basic Auth)
@@ -98,9 +99,9 @@ app.post("/upload", async (c) => {
       method: "PUT",
       headers: {
         "Authorization": `Basic ${auth}`,
-        "Content-Type": "application/octet-stream", // Binary stream အနေနဲ့ ပို့မယ်
+        "Content-Type": "application/octet-stream", 
       },
-      body: sourceRes.body, // Source ကလာတဲ့ Stream ကို Qyun ဆီ တိုက်ရိုက်လွှဲပေးမယ် (Memory မစားအောင်)
+      body: sourceRes.body, 
     });
 
     if (uploadRes.ok || uploadRes.status === 201) {
