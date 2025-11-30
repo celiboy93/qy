@@ -4,16 +4,8 @@ const app = new Hono();
 
 const CONFIG = {
   domain: "https://qyun.org",
-  // Cookie (အစ်ကို့ Cookie အမှန်)
+  // 🔥 Cookie ထည့်ပါ
   cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
-  bucketId: "1", 
-};
-
-const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
-  "Referer": "https://qyun.org/files.html",
-  "Origin": "https://qyun.org",
-  "X-Requested-With": "XMLHttpRequest",
 };
 
 app.get("/", (c) => {
@@ -23,50 +15,51 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Deep Debug</title>
+      <title>Qyun Offline Download</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-blue-400">Qyun Deep Debugger</h1>
+      <h1 class="text-2xl font-bold mb-4 text-blue-400">Qyun Offline Download Task</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
         <input type="text" id="urlInput" placeholder="https://..." class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <label class="block mb-2 text-sm text-gray-400">Filename</label>
-        <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
+        <button onclick="startTask()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold transition">Send Task to Qyun</button>
         
-        <button onclick="startUpload()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold transition">Get Server Response</button>
-        
-        <!-- Result Box -->
-        <label class="block mt-4 mb-2 text-sm text-yellow-400">Server Response (Screenshot This):</label>
-        <pre id="status" class="p-3 bg-black rounded text-xs font-mono text-green-300 break-words whitespace-pre-wrap border border-gray-600 min-h-[100px]">Waiting...</pre>
+        <div id="status" class="mt-4 p-3 bg-gray-900 rounded text-xs font-mono text-gray-300 break-words hidden border border-gray-700"></div>
       </div>
 
       <script>
-        async function startUpload() {
+        async function startTask() {
           const url = document.getElementById('urlInput').value;
-          const name = document.getElementById('nameInput').value;
-          const statusDiv = document.getElementById('status');
-          const btn = document.getElementById('btn');
-
           if(!url) return alert("Link လိုပါတယ်");
 
+          const btn = document.getElementById('btn');
+          const statusDiv = document.getElementById('status');
+
           btn.disabled = true;
-          statusDiv.innerText = "Sending Request...";
+          statusDiv.classList.remove('hidden');
+          statusDiv.innerText = "Sending Offline Download Task...";
           
           try {
-            const startRes = await fetch('/api/debug', {
+            const res = await fetch('/api/offline', {
                 method: 'POST', 
-                body: JSON.stringify({url, name})
+                body: JSON.stringify({url})
             });
-            const res = await startRes.json();
+            const data = await res.json();
             
-            // Show EVERYTHING
-            statusDiv.innerText = JSON.stringify(res, null, 2);
+            // Show result
+            statusDiv.innerText = JSON.stringify(data, null, 2);
+            
+            if(data.code === 0) {
+                statusDiv.className = "mt-4 p-3 bg-green-900 text-green-200 rounded text-xs font-mono break-words border border-green-700";
+            } else {
+                statusDiv.className = "mt-4 p-3 bg-red-900 text-red-200 rounded text-xs font-mono break-words border border-red-700";
+            }
 
           } catch(e) {
-            statusDiv.innerText = "Client Error: " + e.message;
+            statusDiv.innerText = "Error: " + e.message;
           }
           btn.disabled = false;
         }
@@ -77,56 +70,36 @@ app.get("/", (c) => {
   return c.html(html);
 });
 
-app.post("/api/debug", async (c) => {
-  const { url, name } = await c.req.json();
-  let filename = name && name.trim() ? name.trim() : "video.mp4";
+app.post("/api/offline", async (c) => {
+  const { url } = await c.req.json();
 
   try {
-    // 1. Fake Size (To test init)
-    const totalSize = 10 * 1024 * 1024; // 10MB request
-
-    // 2. Generate Key
-    const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
-    const uuid = crypto.randomUUID();
-    const key = `upload/${date}/${uuid}_${filename}`;
-
-    // 3. Request Signature
-    const formData = new FormData();
-    formData.append("name", filename);
-    formData.append("size", totalSize.toString());
-    formData.append("type", "video/mp4");
-    formData.append("key", key);
-    formData.append("bucketId", CONFIG.bucketId); // "1"
-    formData.append("folderId", "");
-
-    const initRes = await fetch(`${CONFIG.domain}/files.html?folderId=`, {
-        method: "POST",
+    // Offline Download API (aria2)
+    const taskRes = await fetch(`${CONFIG.domain}/api/v1/aria2/url`, {
+        method: 'POST',
         headers: { 
             "Cookie": CONFIG.cookie, 
-            ...HEADERS 
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
+            "Referer": "https://qyun.org/files",
+            "Origin": "https://qyun.org",
+            "X-Requested-With": "XMLHttpRequest",
         },
-        body: formData
+        body: JSON.stringify({
+            url: url,
+            dst: "/" // Root folder
+        })
     });
 
-    const rawText = await initRes.text();
-    let json;
+    const text = await taskRes.text();
     try {
-        json = JSON.parse(rawText);
+        return c.json(JSON.parse(text));
     } catch {
-        json = "NOT_JSON";
+        return c.json({ error: "Server returned HTML (Login Blocked)", raw: text.substring(0, 200) });
     }
 
-    return c.json({
-        step: "Init Request to files.html",
-        status_code: initRes.status,
-        is_html: rawText.trim().startsWith("<"),
-        raw_response_text: rawText.substring(0, 500), // First 500 chars
-        parsed_json: json,
-        request_headers: HEADERS
-    });
-
   } catch (e) {
-    return c.json({ error: e.message, stack: e.stack });
+    return c.json({ error: e.message });
   }
 });
 
