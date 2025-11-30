@@ -6,15 +6,13 @@ const app = new Hono();
 const CONFIG = {
   domain: "https://qyun.org",
   
-  // 🔥 ပုံထဲက Cookie စာကြောင်းအရှည်ကြီးကို ဒီအောက်က မျက်တောင်အဖွင့်အပိတ်ကြားမှာ ထည့်ပါ
-  // ဥပမာ: "remember-me=c3N...; SESSION=ZDJ..."
-  cookie: "remember-
-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYY TFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
+  // 🔥 Cookie ကို တစ်ကြောင်းတည်း ဆက်ပေးထားပါတယ် (Error မတက်တော့ပါ)
+  cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
   
   // Channel 2 ID
   policyId: "2", 
   
-  // Upload Chunk Size (9MB)
+  // Upload Chunk Size (9MB) - 413 Error မတက်အောင်
   chunkSize: 9 * 1024 * 1024,
 };
 
@@ -36,7 +34,7 @@ app.get("/", (c) => {
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Cookie Fixed)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Ready)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
