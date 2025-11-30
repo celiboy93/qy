@@ -27,11 +27,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Diagnostics</title>
+      <title>Qyun Fixed</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-blue-400">Qyun Diagnostics</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Fixed)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -43,9 +43,8 @@ app.get("/", (c) => {
         <label class="block mb-2 text-sm text-blue-400">Target Channel ID</label>
         <input type="text" id="bucketInput" value="1" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
 
-        <button onclick="startUpload()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold transition">Test Upload</button>
+        <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Upload</button>
         
-        <!-- Result Box -->
         <div id="status" class="mt-4 p-3 bg-gray-900 rounded text-xs font-mono text-gray-300 break-words hidden border border-gray-700"></div>
       </div>
 
@@ -62,7 +61,7 @@ app.get("/", (c) => {
 
           btn.disabled = true;
           statusDiv.classList.remove('hidden');
-          statusDiv.innerText = "Sending Request to Qyun...";
+          statusDiv.innerText = "Sending Request...";
           
           try {
             const startRes = await fetch('/api/upload', {
@@ -71,17 +70,17 @@ app.get("/", (c) => {
             });
             const res = await startRes.json();
             
-            // Show the FULL response from server
+            // Show result
             statusDiv.innerText = JSON.stringify(res, null, 2);
             
-            if(res.status === 'uploading') {
+            if(res.status === 'debug' || res.status === 'success') {
                 statusDiv.className = "mt-4 p-3 bg-green-900 text-green-200 rounded text-xs font-mono break-words border border-green-700";
             } else {
                 statusDiv.className = "mt-4 p-3 bg-red-900 text-red-200 rounded text-xs font-mono break-words border border-red-700";
             }
 
           } catch(e) {
-            statusDiv.innerText = "Network Error: " + e.message;
+            statusDiv.innerText = "Error: " + e.message;
             statusDiv.className = "mt-4 p-3 bg-red-900 text-red-200 rounded text-xs font-mono break-words border border-red-700";
           }
           btn.disabled = false;
@@ -99,10 +98,11 @@ app.post("/api/upload", async (c) => {
   if (!filename.includes('.')) filename += '.mp4';
 
   try {
-    const headRes = await fetch(sourceUrl, { method: 'HEAD' });
-    const totalSize = Number(headRes.headers.get('content-length')) || 1024*1024*10; // Default 10MB if unknown
+    // 🔥 FIX: "url" variable ကိုပဲ သုံးမယ်
+    const headRes = await fetch(url, { method: 'HEAD' });
+    const totalSize = Number(headRes.headers.get('content-length')) || 1024*1024*10; 
 
-    // Send Request to Qyun
+    // Init Upload
     const initRes = await fetch(`${CONFIG.domain}/api/v1/file/create`, {
         method: 'PUT',
         headers: { 
@@ -122,11 +122,14 @@ app.post("/api/upload", async (c) => {
     const text = await initRes.text();
     try {
         const json = JSON.parse(text);
-        // ပြဿနာရှာဖို့ JSON အကုန်ပြန်ပို့မယ်
         return c.json({ 
             status: "debug", 
             server_response: json,
-            sent_policy_id: bucketId
+            request_info: {
+                filename: filename,
+                size: totalSize,
+                policy: bucketId
+            }
         });
     } catch(e) {
         return c.json({ 
