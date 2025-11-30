@@ -6,9 +6,11 @@ const CONFIG = {
   // 🔥 Worker Link အမှန်ထည့်ပါ
   workerUrl: "https://lugyiapk.telegram-iqowoq.workers.dev", 
   
-  // 🔥 Email/Password ထည့်ပါ (Cookie မလိုတော့ပါ)
-  email: "sswe0014@gmail.com",       
-  password: "Soekyawwin@93", 
+  // 🔥 Cookie အသစ်ပြန်ယူပြီး ထည့်ပါ (Email/Pass မရတော့ပါ)
+  cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTEwNzYxNTQ3MjpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=MmJjMzVmZDATMTZhOS00ZDA4LWFjZmQtM2U4MzE0Nju1NGY3", 
+  
+  // Channel ID
+  bucketId: "1", 
 };
 
 app.get("/", (c) => {
@@ -18,11 +20,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Auto Login (Fixed)</title>
+      <title>Qyun Hybrid Final</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Auto-Login)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Hybrid Uploader</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -31,7 +33,7 @@ app.get("/", (c) => {
         <label class="block mb-2 text-sm text-gray-400">Filename</label>
         <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <div class="mb-4 text-xs text-blue-300">Auth: Auto Login + Channel 2 via Worker</div>
+        <div class="mb-4 text-xs text-blue-300">Method: Cookie via Worker Proxy</div>
 
         <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Upload</button>
         
@@ -53,7 +55,7 @@ app.get("/", (c) => {
 
           btn.disabled = true;
           statusDiv.classList.remove('hidden');
-          statusDiv.innerText = "Worker is Logging in...";
+          statusDiv.innerText = "Connecting via Worker...";
           
           try {
             const startRes = await fetch('/api/upload', {
@@ -63,7 +65,7 @@ app.get("/", (c) => {
             const res = await startRes.json();
             
             if(res.status === 'uploading') {
-                statusDiv.innerText = "Login OK! Uploading...";
+                statusDiv.innerText = "Signature OK! Uploading...";
                 statusDiv.className = "mt-4 p-2 bg-blue-900 rounded text-xs font-mono text-blue-200 break-words";
                 
                 const interval = setInterval(async () => {
@@ -128,30 +130,34 @@ async function processUpload(jobId, sourceUrl, filename) {
         const totalSize = Number(headRes.headers.get('content-length')) || 0;
         if(totalSize === 0) throw new Error("Source size error");
 
-        // 🔥 Step 1: Call Worker (Auto Login + files.html request)
-        const workerRes = await fetch(CONFIG.workerUrl, {
+        const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
+        const key = `upload/${date}/${crypto.randomUUID()}_${filename}`;
+
+        // 🔥 Step 1: Request Policy via Worker (Proxy)
+        const initRes = await fetch(CONFIG.workerUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                email: CONFIG.email,
-                password: CONFIG.password,
-                filename: filename,
-                size: totalSize.toString()
+                targetUrl: `${CONFIG.domain}/files.html?folderId=`, // 🔥 files.html endpoint
+                cookie: CONFIG.cookie,
+                formData: {
+                    name: filename,
+                    size: totalSize.toString(),
+                    type: "video/mp4",
+                    key: key,
+                    bucketId: CONFIG.bucketId,
+                    folderId: ""
+                }
             })
         });
 
-        const initText = await workerRes.text();
+        const initText = await initRes.text();
         let initData;
-        try {
-            initData = JSON.parse(initText);
-        } catch(e) {
-            throw new Error(`Worker Error: ${initText.substring(0,100)}`);
-        }
+        try { initData = JSON.parse(initText); } 
+        catch(e) { throw new Error(`Worker Error: ${initText.substring(0,100)}`); }
 
-        if (initData.error) throw new Error("Worker: " + initData.error);
-        
-        // Qyun (Custom) check
-        if (!initData.policy) throw new Error("Login Failed or No Policy: " + JSON.stringify(initData));
+        // Policy Check
+        if (!initData.policy) throw new Error("Worker Proxy Failed: " + JSON.stringify(initData));
 
         // 🔥 Step 2: Direct Upload to OSS
         const uploadUrl = initData.action || initData.host || "https://upload.qyun.org"; 
@@ -160,12 +166,7 @@ async function processUpload(jobId, sourceUrl, filename) {
         for (const k in initData) {
             if(k !== 'action' && k !== 'host') uploadForm.append(k, initData[k]);
         }
-        
-        if(!uploadForm.has("key")) {
-             const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
-             const key = `upload/${date}/${crypto.randomUUID()}_${filename}`;
-             uploadForm.append("key", key);
-        }
+        if(!uploadForm.has("key")) uploadForm.append("key", key);
 
         const fileRes = await fetch(sourceUrl);
         const blob = await fileRes.blob(); 
