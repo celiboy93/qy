@@ -7,8 +7,7 @@ const CONFIG = {
   domain: "https://qyun.org",
   
   // 🔥 ပုံထဲက Cookie စာကြောင်းအရှည်ကြီးကို ဒီအောက်က မျက်တောင်အဖွင့်အပိတ်ကြားမှာ ထည့်ပါ
-  // ဥပမာ: "remember-
-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYY TFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj"
+  // ဥပမာ: "remember-me=c3N...; SESSION=ZDJ..."
   cookie: "remember-
 me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYY TFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
   
