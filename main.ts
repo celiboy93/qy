@@ -9,11 +9,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Fixer</title>
+      <title>Qyun OSS Final</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun Token Fixer</h1>
+      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun OSS Fixer (Auto-Detect)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         
@@ -23,14 +23,14 @@ app.get("/", (c) => {
         </div>
 
         <div class="mb-4">
-            <label class="block mb-2 text-sm text-gray-400">2. Paste Full Token JSON (Response Tab)</label>
-            <div class="text-xs text-yellow-500 mb-1">⚠️ Must start with <b>{</b> and end with <b>}</b></div>
-            <textarea id="jsonInput" rows="5" class="w-full p-2 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono" placeholder='{ "policy": "...", "signature": "...", "key": "..." }'></textarea>
+            <label class="block mb-2 text-sm text-gray-400">2. Paste Token JSON</label>
+            <div class="text-xs text-gray-500 mb-1">Paste the full response (starting with { "success":... or { "policy":... )</div>
+            <textarea id="jsonInput" rows="5" class="w-full p-2 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono"></textarea>
         </div>
 
         <div class="mb-4">
-            <label class="block mb-2 text-sm text-green-400">3. Filename</label>
-            <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 rounded bg-gray-700 text-white border border-green-700">
+            <label class="block mb-2 text-sm text-green-400">3. Filename (Optional)</label>
+            <input type="text" id="nameInput" placeholder="my_movie.mp4" class="w-full p-2 rounded bg-gray-700 text-white border border-green-700">
         </div>
 
         <button onclick="startUpload()" id="btn" class="w-full bg-purple-600 hover:bg-purple-700 py-2 rounded font-bold transition">Start Upload</button>
@@ -44,35 +44,20 @@ app.get("/", (c) => {
       <script>
         async function startUpload() {
           const url = document.getElementById('urlInput').value;
-          let jsonStr = document.getElementById('jsonInput').value.trim();
+          const jsonStr = document.getElementById('jsonInput').value;
           const customName = document.getElementById('nameInput').value;
+          
           const status = document.getElementById('status');
           const btn = document.getElementById('btn');
           const bar = document.getElementById('progressBar');
 
           if(!url || !jsonStr) return alert("Link နှင့် Token ထည့်ပါ");
 
-          // Basic Validation
-          if (!jsonStr.startsWith("{")) {
-              status.classList.remove('hidden');
-              status.innerText = "❌ JSON Error: စာသားက '{' နဲ့ စရပါမယ်။ Browser > Network > Response Tab က အကုန်ကူးခဲ့ပါ။";
-              status.className = "mt-4 p-2 bg-red-900 text-red-100 rounded text-xs break-words";
-              return;
-          }
-
           let tokenData;
           try {
              tokenData = JSON.parse(jsonStr);
           } catch(e) {
-             return alert("JSON Format မှားနေပါတယ် (Copy ကူးတာ မပြည့်စုံပါ)");
-          }
-
-          // Check for 'key'
-          if (!tokenData.key && !tokenData.dir) {
-              status.classList.remove('hidden');
-              status.innerText = "❌ Invalid Token: 'key' သို့မဟုတ် 'policy' မပါပါ။ Response အမှန်ကို ကူးထည့်ပါ။";
-              status.className = "mt-4 p-2 bg-red-900 text-red-100 rounded text-xs break-words";
-              return;
+             return alert("JSON Format မှားနေပါတယ်");
           }
 
           btn.disabled = true;
@@ -153,9 +138,16 @@ app.post("/api/proxy-upload", async (c) => {
 
 app.get("/api/status/:id", (c) => c.json(jobs.get(c.req.param('id')) || {}));
 
-async function runUpload(jobId, sourceUrl, token, customName) {
+async function runUpload(jobId, sourceUrl, rawToken, customName) {
     try {
         jobs.set(jobId, { status: 'downloading' });
+
+        // 🔥 FIX: Extract data if wrapped inside "data"
+        // အစ်ကို့ JSON ပုံစံ { "data": { ... } } ကို ဖြေရှင်းပေးမယ့်နေရာ
+        let token = rawToken;
+        if (rawToken.data && typeof rawToken.data === 'object') {
+            token = rawToken.data;
+        }
 
         // 1. Determine Upload URL
         let uploadUrl = "https://upload.qyun.org";
@@ -175,15 +167,18 @@ async function runUpload(jobId, sourceUrl, token, customName) {
 
         // 3. Prepare FormData
         const formData = new FormData();
+        
+        // Add all fields from Token JSON
         for (const key in token) {
             if (key !== 'hosts' && key !== 'id') {
                 formData.append(key, token[key]);
             }
         }
 
-        // Validate Key again on server side
-        if (!formData.has("key")) throw new Error("Token JSON missing 'key'. Please copy full Response.");
+        // Validate Key
+        if (!formData.has("key")) throw new Error("Token JSON missing 'key' (Check JSON Format)");
 
+        // Filename Logic
         let finalFilename = "video.mp4";
         if (customName) {
             finalFilename = customName;
@@ -194,7 +189,7 @@ async function runUpload(jobId, sourceUrl, token, customName) {
 
         formData.append("file", blob, finalFilename);
 
-        // 4. Upload
+        // 4. Upload to OSS
         const uploadRes = await fetch(uploadUrl, {
             method: "POST",
             headers: {
