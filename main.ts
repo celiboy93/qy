@@ -7,12 +7,16 @@ const CONFIG = {
   domain: "https://qyun.org",
   // 🔥 Cookie ကို ဒီမှာ ထည့်ပါ
   cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
+  
+  // 🔥 ပုံထဲမှာ bucketId: 1 လို့ပြထားလို့ "1" ကို သုံးပါမယ်
+  policyId: "1", 
+  
   chunkSize: 9 * 1024 * 1024,
 };
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
-  "Referer": "https://qyun.org/home",
+  "Referer": "https://qyun.org/files",
   "Origin": "https://qyun.org",
   "X-Requested-With": "XMLHttpRequest",
 };
@@ -24,11 +28,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Smart Uploader</title>
+      <title>Qyun Final Uploader</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Smart Uploader</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Fixed)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -37,63 +41,25 @@ app.get("/", (c) => {
         <label class="block mb-2 text-sm text-gray-400">Filename</label>
         <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <!-- Channel Select Box -->
-        <label class="block mb-2 text-sm text-blue-400">Select Upload Channel</label>
-        <select id="policySelect" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
-            <option value="">Loading Channels...</option>
-        </select>
+        <!-- ID ပြောင်းချင်ရင် ဒီမှာရိုက်ထည့်လို့ရအောင် လုပ်ပေးထားပါတယ် -->
+        <label class="block mb-2 text-sm text-blue-400">Channel ID (Default: 1)</label>
+        <input type="text" id="policyInput" value="1" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
 
         <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Upload</button>
         
         <div class="mt-4 bg-gray-900 rounded-full h-2.5 overflow-hidden">
              <div id="progressBar" class="bg-green-500 h-2.5 rounded-full" style="width: 0%"></div>
         </div>
-        <div id="status" class="mt-2 text-center text-xs text-yellow-400 break-words">Scanning Account...</div>
+        <div id="status" class="mt-2 text-center text-xs text-yellow-400 break-words">Ready</div>
       </div>
 
       <script>
-        // Page ပွင့်တာနဲ့ Channel တွေကို လှမ်းစစ်မယ်
-        async function loadPolicies() {
-            try {
-                const res = await fetch('/api/policies');
-                const data = await res.json();
-                
-                const select = document.getElementById('policySelect');
-                select.innerHTML = '';
-                
-                if(data.error) {
-                    document.getElementById('status').innerText = "Scan Failed: " + data.error;
-                    return;
-                }
-
-                if(data.length === 0) {
-                     select.innerHTML = '<option value="">No Channels Found</option>';
-                     return;
-                }
-
-                data.forEach(p => {
-                    const opt = document.createElement('option');
-                    opt.value = p.id;
-                    opt.text = p.name + " (ID: " + p.id + ")";
-                    // Channel 2 သို့မဟုတ် Max Size များတာကို Auto ရွေးပေးမယ်
-                    if(p.name.includes("2") || p.max_size > 1000000000) opt.selected = true;
-                    select.appendChild(opt);
-                });
-                document.getElementById('status').innerText = "Channels Loaded! Ready to upload.";
-
-            } catch(e) {
-                document.getElementById('status').innerText = "Error loading channels";
-            }
-        }
-        loadPolicies();
-
         async function startUpload() {
           const url = document.getElementById('urlInput').value;
           const name = document.getElementById('nameInput').value;
-          const policyId = document.getElementById('policySelect').value;
+          const policyId = document.getElementById('policyInput').value; // Get ID from box
           
           if(!url) return alert("Link လိုပါတယ်");
-          if(!policyId) return alert("Channel မရွေးရသေးပါ");
 
           document.getElementById('btn').disabled = true;
           document.getElementById('status').innerText = "Connecting...";
@@ -118,11 +84,11 @@ app.get("/", (c) => {
                 if(pData.status === 'uploading') {
                     const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
                     bar.style.width = pct + '%';
-                    status.innerText = \`Uploading: \${pct}%\`;
+                    status.innerText = \`Uploading: \${pct}% (\${(pData.uploaded/1024/1024).toFixed(1)} MB)\`;
                 } else if(pData.status === 'completed') {
                     clearInterval(interval);
                     bar.style.width = '100%';
-                    status.innerText = "✅ Upload Complete!";
+                    status.innerText = "✅ Upload Complete! Check Qyun.";
                     status.className = "mt-2 text-center text-xs text-green-400";
                     document.getElementById('btn').disabled = false;
                 } else if(pData.status === 'failed') {
@@ -145,30 +111,9 @@ app.get("/", (c) => {
   return c.html(html);
 });
 
-// --- API Endpoints ---
-
-// 1. Get Storage Policies (Channels)
-app.get("/api/policies", async (c) => {
-    try {
-        const res = await fetch(`${CONFIG.domain}/api/v1/user/storage-policies`, {
-            headers: { "Cookie": CONFIG.cookie, ...HEADERS }
-        });
-        const data = await res.json();
-        
-        if (data.code === 0 && data.data) {
-            // Channel List ကို ပြန်ပို့မယ်
-            return c.json(data.data.map(p => ({ id: p.id, name: p.name, max_size: p.max_size })));
-        } else {
-            return c.json({ error: "Cannot fetch channels. Check Cookie." });
-        }
-    } catch (e) {
-        return c.json({ error: e.message });
-    }
-});
-
 const jobs = new Map();
 
-// 2. Init Upload
+// Init Upload
 app.post("/api/init", async (c) => {
   const { url, name, policyId } = await c.req.json();
   const jobId = crypto.randomUUID();
@@ -176,7 +121,9 @@ app.post("/api/init", async (c) => {
   if (!filename.includes('.')) filename += '.mp4';
 
   jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
-  processChunkUpload(jobId, url, filename, policyId).catch(e => {
+  
+  // Use the ID from user input (default "1")
+  processChunkUpload(jobId, url, filename, policyId || CONFIG.policyId).catch(e => {
       jobs.set(jobId, { status: 'failed', error: e.message });
   });
 
@@ -185,17 +132,17 @@ app.post("/api/init", async (c) => {
 
 app.get("/api/status/:id", (c) => c.json(jobs.get(c.req.param('id')) || {}));
 
-// 3. Upload Logic (Cloudreve v3 Chunked)
+// Cloudreve v3 Chunked Upload
 async function processChunkUpload(jobId, sourceUrl, filename, policyId) {
     try {
-        // Get File Size
+        // 1. Get File Size
         const headRes = await fetch(sourceUrl, { method: 'HEAD' });
         const totalSize = Number(headRes.headers.get('content-length'));
-        if(!totalSize) throw new Error("Source file size unknown");
+        if(!totalSize) throw new Error("Source file size unknown (Check Link)");
 
         jobs.set(jobId, { status: 'uploading', uploaded: 0, total: totalSize });
 
-        // Init Upload Session
+        // 2. Init Upload Session (Using Manual ID)
         const initRes = await fetch(`${CONFIG.domain}/api/v1/file/create`, {
             method: 'PUT',
             headers: { 
@@ -207,17 +154,22 @@ async function processChunkUpload(jobId, sourceUrl, filename, policyId) {
                 path: "/",
                 size: totalSize,
                 name: filename,
-                policy_id: policyId, // User selected ID
+                policy_id: policyId, // "1"
                 type: "file"
             })
         });
 
-        const initData = await initRes.json();
+        // Check if HTML returned (Cloudflare Block)
+        const initText = await initRes.text();
+        let initData;
+        try { initData = JSON.parse(initText); } 
+        catch(e) { throw new Error(`Server returned HTML (Blocked): ${initText.substring(0, 50)}`); }
+
         if(initData.code !== 0) throw new Error("Init Failed: " + initData.msg);
         
         const sessionID = initData.data;
 
-        // Chunked Streaming
+        // 3. Chunked Streaming
         const sourceRes = await fetch(sourceUrl);
         const reader = sourceRes.body.getReader();
         let chunkBuffer = new Uint8Array(0);
@@ -234,13 +186,12 @@ async function processChunkUpload(jobId, sourceUrl, filename, policyId) {
                 }
                 break;
             }
-            // Append buffer
+            
             const temp = new Uint8Array(chunkBuffer.length + value.length);
             temp.set(chunkBuffer);
             temp.set(value, chunkBuffer.length);
             chunkBuffer = temp;
 
-            // Upload chunks
             while (chunkBuffer.length >= CONFIG.chunkSize) {
                 const chunk = chunkBuffer.slice(0, CONFIG.chunkSize);
                 chunkBuffer = chunkBuffer.slice(CONFIG.chunkSize);
