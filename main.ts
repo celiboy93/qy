@@ -1,4 +1,3 @@
-
 import { Hono } from "https://deno.land/x/hono@v3.11.7/mod.ts";
 
 const app = new Hono();
@@ -6,21 +5,25 @@ const app = new Hono();
 // --- Configuration ---
 const CONFIG = {
   domain: "https://qyun.org",
-  email: "sswe0014@gmail.com",      
-  password: "Soekyawwin@93",
   
-  // 🔥 Channel 2 ID (Qyun မှာပုံမှန်အားဖြင့် "2" ဖြစ်သည်)
+  // 🔥 ပုံထဲက Cookie စာကြောင်းအရှည်ကြီးကို ဒီအောက်က မျက်တောင်အဖွင့်အပိတ်ကြားမှာ ထည့်ပါ
+  // ဥပမာ: "remember-
+me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYY TFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj"
+  cookie: "remember-
+me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYY TFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
+  
+  // Channel 2 ID
   policyId: "2", 
   
+  // Upload Chunk Size (9MB)
   chunkSize: 9 * 1024 * 1024,
 };
 
-// Browser လို ဟန်ဆောင်မည့် Headers များ
+// Browser Headers (Cloudflare ရှောင်ရန်)
 const COMMON_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Referer": "https://qyun.org/",
+  "Referer": "https://qyun.org/files",
   "Origin": "https://qyun.org",
-  "Accept-Language": "en-US,en;q=0.9",
 };
 
 app.get("/", (c) => {
@@ -30,11 +33,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Channel 2 Fixed</title>
+      <title>Qyun Uploader Final</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Fix Login)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Cookie Fixed)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -67,7 +70,7 @@ app.get("/", (c) => {
           btn.disabled = true;
 
           try {
-            status.innerText = "Authenticating...";
+            status.innerText = "Initializing...";
             const startRes = await fetch('/api/init', {
                 method: 'POST', 
                 body: JSON.stringify({url, name})
@@ -135,36 +138,19 @@ app.get("/api/status/:id", (c) => {
     return c.json(jobs.get(id) || { status: 'unknown' });
 });
 
-// Helper function to handle JSON parsing safely
 async function parseJsonOrError(res) {
     const text = await res.text();
     try {
         return JSON.parse(text);
     } catch (e) {
-        // If it's HTML (Cloudflare challenge), show first 100 chars
-        throw new Error(`Server returned HTML instead of JSON. (Possibly Cloudflare Block or Login Page). Response: ${text.substring(0, 100)}...`);
+        throw new Error(`Cloudflare/Login Block. Response: ${text.substring(0, 100)}...`);
     }
 }
 
 async function processChunkUpload(jobId, sourceUrl, filename) {
     try {
-        // Step 1: Login with Fake Headers
-        const loginRes = await fetch(`${CONFIG.domain}/api/v1/user/session`, {
-            method: 'POST',
-            headers: { 
-                ...COMMON_HEADERS,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ userName: CONFIG.email, Password: CONFIG.password })
-        });
-
-        const loginData = await parseJsonOrError(loginRes);
+        // Step 1: Skip Login (Use Manual Cookie)
         
-        if(loginData.code !== 0) throw new Error("Login Failed: " + loginData.msg);
-        
-        let cookies = loginRes.headers.get("set-cookie");
-        if(cookies) cookies = cookies.split(',').map(c => c.split(';')[0]).join('; ');
-
         // Step 2: Get Size
         const headRes = await fetch(sourceUrl, { method: 'HEAD' });
         const totalSize = Number(headRes.headers.get('content-length'));
@@ -172,12 +158,12 @@ async function processChunkUpload(jobId, sourceUrl, filename) {
 
         jobs.set(jobId, { status: 'uploading', uploaded: 0, total: totalSize });
 
-        // Step 3: Init Upload with POLICY ID
+        // Step 3: Init Upload
         const initRes = await fetch(`${CONFIG.domain}/api/v1/file/create`, {
             method: 'PUT',
             headers: { 
                 ...COMMON_HEADERS,
-                "Cookie": cookies, 
+                "Cookie": CONFIG.cookie, 
                 "Content-Type": "application/json" 
             },
             body: JSON.stringify({
@@ -205,7 +191,7 @@ async function processChunkUpload(jobId, sourceUrl, filename) {
             const { done, value } = await reader.read();
             if (done) {
                 if (chunkBuffer.length > 0) {
-                    await uploadSingleChunk(sessionID, chunkIndex, chunkBuffer, cookies);
+                    await uploadSingleChunk(sessionID, chunkIndex, chunkBuffer);
                     uploadedSize += chunkBuffer.length;
                     jobs.set(jobId, { status: 'uploading', uploaded: uploadedSize, total: totalSize });
                 }
@@ -219,7 +205,7 @@ async function processChunkUpload(jobId, sourceUrl, filename) {
             while (chunkBuffer.length >= CONFIG.chunkSize) {
                 const chunkToSend = chunkBuffer.slice(0, CONFIG.chunkSize);
                 chunkBuffer = chunkBuffer.slice(CONFIG.chunkSize);
-                await uploadSingleChunk(sessionID, chunkIndex, chunkToSend, cookies);
+                await uploadSingleChunk(sessionID, chunkIndex, chunkToSend);
                 chunkIndex++;
                 uploadedSize += chunkToSend.length;
                 jobs.set(jobId, { status: 'uploading', uploaded: uploadedSize, total: totalSize });
@@ -231,18 +217,17 @@ async function processChunkUpload(jobId, sourceUrl, filename) {
     }
 }
 
-async function uploadSingleChunk(sessionID, index, data, cookies) {
+async function uploadSingleChunk(sessionID, index, data) {
     const uploadRes = await fetch(`${CONFIG.domain}/api/v1/file/upload/${sessionID}/${index}`, {
         method: 'POST',
         headers: { 
             ...COMMON_HEADERS,
-            "Cookie": cookies, 
+            "Cookie": CONFIG.cookie, 
             "Content-Type": "application/octet-stream" 
         },
         body: data
     });
     if(!uploadRes.ok) {
-         // Error response text ကို ဖတ်မယ်
          const txt = await uploadRes.text();
          throw new Error(`Chunk ${index} failed: ${txt.substring(0, 50)}`);
     }
