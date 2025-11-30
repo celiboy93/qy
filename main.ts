@@ -6,20 +6,17 @@ const app = new Hono();
 const CONFIG = {
   domain: "https://qyun.org",
   
-  // 🔥 အစ်ကိုပေးတဲ့ Cookie ကို တစ်ကြောင်းတည်းဖြစ်အောင် ဆက်ပြီး ထည့်ပေးထားပါတယ်
+  // 🔥 အစ်ကိုပေးထားတဲ့ Cookie ကို ထည့်ပေးထားပါတယ်
   cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
   
-  // Channel 2 ID
-  policyId: "2", 
-  
-  // Upload Chunk Size (9MB) - 413 Error မတက်အောင်
-  chunkSize: 9 * 1024 * 1024,
+  // Channel 2 ID (ပုံထဲကအတိုင်း 1 ကိုသုံးပါမယ်)
+  bucketId: "1", 
 };
 
-// 🔥 Android User-Agent (အစ်ကို့ဖုန်း Cookie နဲ့ ကိုက်ညီအောင် ပြောင်းထားပါသည်)
-const COMMON_HEADERS = {
+// Android Header (Cookie နဲ့ကိုက်ညီအောင်)
+const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
-  "Referer": "https://qyun.org/files",
+  "Referer": "https://qyun.org/files.html",
   "Origin": "https://qyun.org",
   "X-Requested-With": "XMLHttpRequest",
 };
@@ -31,11 +28,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Uploader Final</title>
+      <title>Qyun Uploader</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Android Cookie)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Ready)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -45,13 +42,13 @@ app.get("/", (c) => {
         <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
         <div class="mb-4">
-             <span class="bg-blue-900 text-blue-200 text-xs px-2 py-1 rounded">Channel 2 (ID: ${CONFIG.policyId})</span>
+             <span class="bg-blue-900 text-blue-200 text-xs px-2 py-1 rounded">Channel 2 (Bucket ID: ${CONFIG.bucketId})</span>
         </div>
 
         <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Upload</button>
         
         <div class="mt-4 bg-gray-900 rounded-full h-2.5 overflow-hidden">
-             <div id="progressBar" class="bg-green-500 h-2.5 rounded-full" style="width: 0%"></div>
+             <div id="progressBar" class="bg-blue-500 h-2.5 rounded-full" style="width: 0%"></div>
         </div>
         <div id="status" class="mt-2 text-center text-xs text-yellow-400 break-words">Ready</div>
       </div>
@@ -68,42 +65,43 @@ app.get("/", (c) => {
           btn.disabled = true;
 
           try {
-            status.innerText = "Connecting...";
-            const startRes = await fetch('/api/init', {
+            status.innerText = "Requesting Signature...";
+            const startRes = await fetch('/api/upload', {
                 method: 'POST', 
                 body: JSON.stringify({url, name})
             });
-            const startData = await startRes.json();
+            const res = await startRes.json();
             
-            if(startData.error) throw new Error(startData.error);
-            
-            const jobId = startData.jobId;
-            
-            const interval = setInterval(async () => {
-                const poll = await fetch('/api/status/' + jobId);
-                const pData = await poll.json();
-                
-                if(pData.status === 'uploading') {
-                    const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
-                    bar.style.width = pct + '%';
-                    status.innerText = \`Uploading: \${pct}% (\${(pData.uploaded/1024/1024).toFixed(1)} MB)\`;
-                } else if(pData.status === 'completed') {
-                    clearInterval(interval);
-                    bar.style.width = '100%';
-                    status.innerText = "✅ Upload Complete!";
-                    status.classList.replace('text-yellow-400', 'text-green-400');
-                    btn.disabled = false;
-                } else if(pData.status === 'failed') {
-                    clearInterval(interval);
-                    status.innerText = "❌ Error: " + pData.error;
-                    status.classList.replace('text-yellow-400', 'text-red-400');
-                    btn.disabled = false;
-                }
-            }, 2000);
+            if(res.status === 'uploading') {
+                status.innerText = "Uploading... (Please wait)";
+                const interval = setInterval(async () => {
+                    const poll = await fetch('/api/status/' + res.jobId);
+                    const pData = await poll.json();
+                    
+                    if(pData.status === 'uploading') {
+                       const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
+                       bar.style.width = pct + '%';
+                       status.innerText = \`Uploading: \${pct}%\`;
+                    } else if(pData.status === 'completed') {
+                       clearInterval(interval);
+                       bar.style.width = '100%';
+                       status.innerText = "✅ Success! File Uploaded to Channel 2.";
+                       status.className = "mt-2 text-center text-xs text-green-400";
+                       btn.disabled = false;
+                    } else if(pData.status === 'failed') {
+                       clearInterval(interval);
+                       status.innerText = "❌ Error: " + pData.error;
+                       status.className = "mt-2 text-center text-xs text-red-400";
+                       btn.disabled = false;
+                    }
+                }, 2000);
+            } else {
+                throw new Error(res.msg || "Unknown error");
+            }
 
           } catch(e) {
             status.innerText = "Failed: " + e.message;
-            status.classList.replace('text-yellow-400', 'text-red-400');
+            status.className = "mt-2 text-center text-xs text-red-400";
             btn.disabled = false;
           }
         }
@@ -116,124 +114,93 @@ app.get("/", (c) => {
 
 const jobs = new Map();
 
-app.post("/api/init", async (c) => {
+app.post("/api/upload", async (c) => {
   const { url, name } = await c.req.json();
   const jobId = crypto.randomUUID();
+  
   let filename = name && name.trim() ? name.trim() : url.split('/').pop().split('?')[0];
   if (!filename.includes('.')) filename += '.mp4';
 
   jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
-
-  processChunkUpload(jobId, url, filename).catch(err => {
-      console.error(err);
-      jobs.set(jobId, { status: 'failed', error: err.message });
+  processUpload(jobId, url, filename).catch(e => {
+      jobs.set(jobId, { status: 'failed', error: e.message });
   });
 
-  return c.json({ jobId });
+  return c.json({ status: "uploading", jobId });
 });
 
 app.get("/api/status/:id", (c) => {
-    const id = c.req.param('id');
-    return c.json(jobs.get(id) || { status: 'unknown' });
+    return c.json(jobs.get(c.req.param('id')) || {});
 });
 
-async function parseJsonOrError(res) {
-    const text = await res.text();
+async function processUpload(jobId, sourceUrl, filename) {
     try {
-        return JSON.parse(text);
-    } catch (e) {
-        // HTML ပြန်လာရင် Cloudflare Block တာဖြစ်နိုင်လို့ စာသားအဖြစ် ပြန်ပြမယ်
-        throw new Error(`Server Response not JSON (Possibly Blocked): ${text.substring(0, 150)}...`);
-    }
-}
-
-async function processChunkUpload(jobId, sourceUrl, filename) {
-    try {
-        // Step 1: Skip Login (Use Manual Cookie)
-        
-        // Step 2: Get Size
+        // 1. Get File Size
         const headRes = await fetch(sourceUrl, { method: 'HEAD' });
-        const totalSize = Number(headRes.headers.get('content-length'));
-        if(!totalSize) throw new Error("Source file size unknown (Cannot get Content-Length)");
+        const totalSize = Number(headRes.headers.get('content-length')) || 0;
+        if(totalSize === 0) throw new Error("Cannot get file size");
+
+        // 2. Generate Key
+        const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
+        const uuid = crypto.randomUUID();
+        const key = `upload/${date}/${uuid}_${filename}`;
+
+        // 3. Request Signature from Qyun
+        const formData = new FormData();
+        formData.append("name", filename);
+        formData.append("size", totalSize.toString());
+        formData.append("type", "video/mp4");
+        formData.append("key", key);
+        formData.append("bucketId", CONFIG.bucketId); // Channel 2
+        formData.append("folderId", "");
+
+        const initRes = await fetch(`${CONFIG.domain}/files.html?folderId=`, {
+            method: "POST",
+            headers: { "Cookie": CONFIG.cookie, ...HEADERS },
+            body: formData
+        });
+
+        const initText = await initRes.text();
+        let initData;
+        try {
+            initData = JSON.parse(initText);
+        } catch(e) {
+            throw new Error(`Init response error: ${initText.substring(0,100)}`);
+        }
+
+        if (!initData.policy) throw new Error("Invalid Signature Response");
+
+        // 4. Upload to Storage
+        const uploadUrl = initData.action || initData.host || "https://upload.qyun.org"; 
+        const uploadForm = new FormData();
+        
+        for (const k in initData) {
+            if(k !== 'action' && k !== 'host') uploadForm.append(k, initData[k]);
+        }
+        if(!uploadForm.has("key")) uploadForm.append("key", key);
+
+        // Download & Upload Stream
+        const fileRes = await fetch(sourceUrl);
+        const blob = await fileRes.blob(); 
+        
+        uploadForm.append("file", blob, filename);
 
         jobs.set(jobId, { status: 'uploading', uploaded: 0, total: totalSize });
 
-        // Step 3: Init Upload
-        const initRes = await fetch(`${CONFIG.domain}/api/v1/file/create`, {
-            method: 'PUT',
-            headers: { 
-                ...COMMON_HEADERS,
-                "Cookie": CONFIG.cookie, 
-                "Content-Type": "application/json" 
-            },
-            body: JSON.stringify({
-                path: "/",
-                size: totalSize,
-                name: filename,
-                policy_id: CONFIG.policyId,
-                type: "file"
-            })
+        const uploadRes = await fetch(uploadUrl, {
+            method: "POST",
+            body: uploadForm
         });
 
-        const initData = await parseJsonOrError(initRes);
-        
-        // Error ရှိရင် အကြောင်းရင်းအပြည့်အစုံပြမယ်
-        if(initData.code !== 0) {
-             throw new Error("Init Failed: " + JSON.stringify(initData));
+        if (uploadRes.ok || uploadRes.status === 204 || uploadRes.status === 200) {
+             jobs.set(jobId, { status: 'completed', uploaded: totalSize, total: totalSize });
+        } else {
+             const errTxt = await uploadRes.text();
+             throw new Error(`Upload Failed: ${uploadRes.status} ${errTxt.substring(0,100)}`);
         }
-        
-        const sessionID = initData.data;
 
-        // Step 4: Chunked Streaming
-        const sourceRes = await fetch(sourceUrl);
-        const reader = sourceRes.body.getReader();
-        let chunkBuffer = new Uint8Array(0);
-        let uploadedSize = 0;
-        let chunkIndex = 0;
-        
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                if (chunkBuffer.length > 0) {
-                    await uploadSingleChunk(sessionID, chunkIndex, chunkBuffer);
-                    uploadedSize += chunkBuffer.length;
-                    jobs.set(jobId, { status: 'uploading', uploaded: uploadedSize, total: totalSize });
-                }
-                break;
-            }
-            const newBuffer = new Uint8Array(chunkBuffer.length + value.length);
-            newBuffer.set(chunkBuffer);
-            newBuffer.set(value, chunkBuffer.length);
-            chunkBuffer = newBuffer;
-
-            while (chunkBuffer.length >= CONFIG.chunkSize) {
-                const chunkToSend = chunkBuffer.slice(0, CONFIG.chunkSize);
-                chunkBuffer = chunkBuffer.slice(CONFIG.chunkSize);
-                await uploadSingleChunk(sessionID, chunkIndex, chunkToSend);
-                chunkIndex++;
-                uploadedSize += chunkToSend.length;
-                jobs.set(jobId, { status: 'uploading', uploaded: uploadedSize, total: totalSize });
-            }
-        }
-        jobs.set(jobId, { status: 'completed', uploaded: totalSize, total: totalSize });
     } catch (e) {
         jobs.set(jobId, { status: 'failed', error: e.message });
-    }
-}
-
-async function uploadSingleChunk(sessionID, index, data) {
-    const uploadRes = await fetch(`${CONFIG.domain}/api/v1/file/upload/${sessionID}/${index}`, {
-        method: 'POST',
-        headers: { 
-            ...COMMON_HEADERS,
-            "Cookie": CONFIG.cookie, 
-            "Content-Type": "application/octet-stream" 
-        },
-        body: data
-    });
-    if(!uploadRes.ok) {
-         const txt = await uploadRes.text();
-         throw new Error(`Chunk ${index} failed: ${txt.substring(0, 50)}`);
     }
 }
 
