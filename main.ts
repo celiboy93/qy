@@ -9,90 +9,84 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Stream Uploader</title>
+      <title>Qyun Debug Streamer</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Unlimited Streamer</h1>
+      <h1 class="text-2xl font-bold mb-4 text-blue-400">Qyun Debug Streamer</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">1. Source Video URL</label>
         <input type="text" id="urlInput" placeholder="https://..." class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
         <label class="block mb-2 text-sm text-gray-400">2. Paste Token JSON</label>
-        <textarea id="tokenInput" placeholder='{"success":true...}' class="w-full h-32 p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono"></textarea>
+        <textarea id="tokenInput" placeholder='Paste JSON from console...' class="w-full h-32 p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono"></textarea>
 
-        <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Streaming</button>
+        <button onclick="startUpload()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold transition">Start Upload</button>
         
-        <div class="mt-4 bg-gray-900 rounded-full h-4 overflow-hidden border border-gray-700">
-             <div id="progressBar" class="bg-green-500 h-full transition-all duration-200" style="width: 0%"></div>
+        <!-- Logs Area -->
+        <div id="logs" class="mt-4 p-3 bg-black rounded text-xs font-mono text-green-300 h-40 overflow-y-auto border border-gray-700">
+            Waiting for input...
         </div>
-        <div id="percentText" class="text-center text-xs mt-1 text-gray-400">0%</div>
-        <div id="status" class="mt-2 text-center text-xs text-yellow-400 break-words">Waiting...</div>
       </div>
 
       <script>
+        function log(msg, type='info') {
+            const logs = document.getElementById('logs');
+            const color = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-gray-300');
+            logs.innerHTML += \`<div class="\${color}">[\${new Date().toLocaleTimeString()}] \${msg}</div>\`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
         async function startUpload() {
           const url = document.getElementById('urlInput').value;
           const tokenStr = document.getElementById('tokenInput').value;
           const btn = document.getElementById('btn');
-          const statusDiv = document.getElementById('status');
-          const bar = document.getElementById('progressBar');
-          const pctText = document.getElementById('percentText');
 
           if(!url || !tokenStr) return alert("Data ဖြည့်ပါ");
 
-          let token;
-          try { token = JSON.parse(tokenStr); } catch(e) { return alert("JSON မှားနေသည်"); }
-
-          if (!token.data?.OSSAccessKeyId) return alert("Token တွင် OSS Key မပါပါ");
-
           btn.disabled = true;
-          statusDiv.innerText = "Initializing Stream...";
-          bar.style.width = '0%';
+          document.getElementById('logs').innerHTML = ''; // Clear logs
+          log("🚀 Starting process...");
           
           try {
             const startRes = await fetch('/api/upload', {
                 method: 'POST', 
-                body: JSON.stringify({url, token})
+                body: JSON.stringify({url, tokenStr})
             });
             const res = await startRes.json();
             
             if(res.status === 'uploading') {
-                statusDiv.innerText = "Streaming in progress...";
+                log("📡 Stream connected! Monitoring...", "success");
                 
                 const interval = setInterval(async () => {
                     const poll = await fetch('/api/status/' + res.jobId);
                     const pData = await poll.json();
                     
                     if(pData.status === 'uploading') {
-                       const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
-                       bar.style.width = pct + '%';
-                       pctText.innerText = pct + '%';
-                       
                        const mbLoaded = (pData.uploaded / (1024 * 1024)).toFixed(1);
                        const mbTotal = (pData.total / (1024 * 1024)).toFixed(1);
-                       statusDiv.innerText = \`Streaming: \${mbLoaded} MB / \${mbTotal} MB\`;
-
+                       const pct = Math.round((pData.uploaded / pData.total) * 100);
+                       // Update only last line to avoid spam
+                       // log(\`Uploading: \${pct}% (\${mbLoaded}/\${mbTotal} MB)\`); 
+                       document.title = \`Uploading \${pct}%\`;
                     } else if(pData.status === 'completed') {
                        clearInterval(interval);
-                       bar.style.width = '100%';
-                       pctText.innerText = '100%';
-                       statusDiv.innerText = "✅ Upload Success!";
+                       log("✅ Upload SUCCESS! File is on Qyun.", "success");
                        btn.disabled = false;
                     } else if(pData.status === 'failed') {
                        clearInterval(interval);
-                       bar.style.backgroundColor = 'red';
-                       statusDiv.innerText = "❌ Error: " + pData.error;
+                       log("❌ FAILED: " + pData.error, "error");
                        btn.disabled = false;
                     }
-                }, 1500);
+                }, 2000);
             } else {
-                throw new Error(res.msg || JSON.stringify(res));
+                log("❌ Init Error: " + (res.error || JSON.stringify(res)), "error");
+                btn.disabled = false;
             }
 
           } catch(e) {
-            statusDiv.innerText = "Error: " + e.message;
+            log("❌ Client Error: " + e.message, "error");
             btn.disabled = false;
           }
         }
@@ -106,12 +100,12 @@ app.get("/", (c) => {
 const jobs = new Map();
 
 app.post("/api/upload", async (c) => {
-  const { url, token } = await c.req.json();
+  const { url, tokenStr } = await c.req.json();
   const jobId = crypto.randomUUID();
 
   jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
   
-  processStreamUpload(jobId, url, token).catch(e => {
+  processDebugUpload(jobId, url, tokenStr).catch(e => {
       jobs.set(jobId, { status: 'failed', error: e.message });
   });
 
@@ -120,71 +114,87 @@ app.post("/api/upload", async (c) => {
 
 app.get("/api/status/:id", (c) => c.json(jobs.get(c.req.param('id')) || {}));
 
-async function processStreamUpload(jobId, sourceUrl, token) {
+async function processDebugUpload(jobId, sourceUrl, tokenStr) {
     try {
-        const ossData = token.data;
-        // Use Host 2 (Aliyun) often better for direct stream
-        const uploadUrl = ossData.hosts[1] || ossData.hosts[0]; 
+        // 1. Parse Token
+        let ossData;
+        try {
+            const parsed = JSON.parse(tokenStr);
+            ossData = parsed.data || parsed; // Handle {data: ...} or direct {...}
+        } catch { throw new Error("Invalid JSON Token"); }
+
+        if(!ossData.OSSAccessKeyId) throw new Error("Token missing OSSAccessKeyId");
+
+        // Try using the FIRST host (usually safer) or fallback to second
+        const uploadUrl = (ossData.hosts && ossData.hosts[0]) ? ossData.hosts[0] : ossData.host;
         
-        // 1. Fetch Source Stream
-        const sourceRes = await fetch(sourceUrl);
-        if(!sourceRes.ok) throw new Error("Source fetch failed");
+        // 2. Test Source URL Connection
+        const headCheck = await fetch(sourceUrl, { method: 'HEAD' });
+        const totalSize = Number(headCheck.headers.get('content-length')) || 0;
         
-        const totalSize = Number(sourceRes.headers.get('content-length')) || 0;
-        
-        // 2. Prepare Multipart Boundary
-        const boundary = "----DenoUploadBoundary" + crypto.randomUUID();
+        if (!headCheck.ok) {
+             throw new Error(`Source Link Error: ${headCheck.status} ${headCheck.statusText} (Deno cannot download this link)`);
+        }
+        if (totalSize === 0) {
+             throw new Error("Source file has 0 size or hidden Content-Length");
+        }
+
+        // 3. Prepare Multipart Stream
+        const boundary = "----DenoDebugBoundary" + crypto.randomUUID();
         const crlf = "\r\n";
         const encoder = new TextEncoder();
 
-        // 3. Helper to create part headers
         function createPart(name, value) {
-            return encoder.encode(
-                `--${boundary}${crlf}Content-Disposition: form-data; name="${name}"${crlf}${crlf}${value}${crlf}`
-            );
+            return encoder.encode(`--${boundary}${crlf}Content-Disposition: form-data; name="${name}"${crlf}${crlf}${value}${crlf}`);
         }
 
-        // 4. Create the Stream
+        // 4. Start Real Stream
+        const sourceRes = await fetch(sourceUrl);
+        if(!sourceRes.body) throw new Error("Source has no body");
+
         let loaded = 0;
         const multipartStream = new ReadableStream({
             async start(controller) {
-                // Add Fields
+                // OSS Fields
                 controller.enqueue(createPart("OSSAccessKeyId", ossData.OSSAccessKeyId));
                 controller.enqueue(createPart("policy", ossData.policy));
                 controller.enqueue(createPart("Signature", ossData.signature));
                 controller.enqueue(createPart("key", ossData.key));
                 controller.enqueue(createPart("success_action_status", "200"));
 
-                // Add File Header
-                const fileHeader = `--${boundary}${crlf}Content-Disposition: form-data; name="file"; filename="video.mp4"${crlf}Content-Type: video/mp4${crlf}${crlf}`;
-                controller.enqueue(encoder.encode(fileHeader));
+                // File Header
+                controller.enqueue(encoder.encode(`--${boundary}${crlf}Content-Disposition: form-data; name="file"; filename="video.mp4"${crlf}Content-Type: video/mp4${crlf}${crlf}`));
 
-                // Pipe Source File Stream
+                // Pipe Data
                 const reader = sourceRes.body.getReader();
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    
                     loaded += value.length;
-                    // Update Status (Every ~2MB)
-                    if (loaded % (2 * 1024 * 1024) < value.length || loaded === totalSize) {
+                    
+                    // Update Job Status
+                    if (loaded % (5 * 1024 * 1024) < value.length || loaded === totalSize) {
                         jobs.set(jobId, { status: 'uploading', uploaded: loaded, total: totalSize });
                     }
-                    
                     controller.enqueue(value);
                 }
 
-                // Add Footer
+                // Footer
                 controller.enqueue(encoder.encode(`${crlf}--${boundary}--${crlf}`));
                 controller.close();
             }
         });
 
-        // 5. Send to OSS (Using Manual Multipart Body)
+        // 5. Send to OSS with Explicit Content-Length
+        // Important: Some OSS requires Content-Length to be set if known
+        // We calculate rough size: FileSize + ~1KB overhead for headers
+        const estimatedSize = totalSize + 2048; 
+
         const uploadRes = await fetch(uploadUrl, {
             method: "POST",
             headers: {
                 "Content-Type": `multipart/form-data; boundary=${boundary}`,
+                // "Content-Length": estimatedSize.toString() // Deno manages this usually, but good to know
             },
             body: multipartStream
         });
@@ -194,7 +204,7 @@ async function processStreamUpload(jobId, sourceUrl, token) {
         if (uploadRes.ok || uploadRes.status === 200 || uploadRes.status === 204) {
              jobs.set(jobId, { status: 'completed', uploaded: totalSize, total: totalSize });
         } else {
-             throw new Error(`OSS Error ${uploadRes.status}: ${respText.substring(0, 200)}`);
+             throw new Error(`OSS Rejected (${uploadRes.status}): ${respText.substring(0, 150)}`);
         }
 
     } catch (e) {
