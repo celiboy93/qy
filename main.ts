@@ -6,7 +6,7 @@ const app = new Hono();
 const CONFIG = {
   domain: "https://qyun.org",
   
-  // 🔥 Cookie ကို တစ်ကြောင်းတည်း ဆက်ပေးထားပါတယ် (Error မတက်တော့ပါ)
+  // 🔥 အစ်ကိုပေးတဲ့ Cookie ကို တစ်ကြောင်းတည်းဖြစ်အောင် ဆက်ပြီး ထည့်ပေးထားပါတယ်
   cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
   
   // Channel 2 ID
@@ -16,11 +16,12 @@ const CONFIG = {
   chunkSize: 9 * 1024 * 1024,
 };
 
-// Browser Headers (Cloudflare ရှောင်ရန်)
+// 🔥 Android User-Agent (အစ်ကို့ဖုန်း Cookie နဲ့ ကိုက်ညီအောင် ပြောင်းထားပါသည်)
 const COMMON_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
   "Referer": "https://qyun.org/files",
   "Origin": "https://qyun.org",
+  "X-Requested-With": "XMLHttpRequest",
 };
 
 app.get("/", (c) => {
@@ -34,7 +35,7 @@ app.get("/", (c) => {
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Ready)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Android Cookie)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -52,7 +53,7 @@ app.get("/", (c) => {
         <div class="mt-4 bg-gray-900 rounded-full h-2.5 overflow-hidden">
              <div id="progressBar" class="bg-green-500 h-2.5 rounded-full" style="width: 0%"></div>
         </div>
-        <div id="status" class="mt-2 text-center text-sm text-yellow-400">Ready</div>
+        <div id="status" class="mt-2 text-center text-xs text-yellow-400 break-words">Ready</div>
       </div>
 
       <script>
@@ -67,7 +68,7 @@ app.get("/", (c) => {
           btn.disabled = true;
 
           try {
-            status.innerText = "Initializing...";
+            status.innerText = "Connecting...";
             const startRes = await fetch('/api/init', {
                 method: 'POST', 
                 body: JSON.stringify({url, name})
@@ -101,7 +102,8 @@ app.get("/", (c) => {
             }, 2000);
 
           } catch(e) {
-            status.innerText = "Error: " + e.message;
+            status.innerText = "Failed: " + e.message;
+            status.classList.replace('text-yellow-400', 'text-red-400');
             btn.disabled = false;
           }
         }
@@ -140,7 +142,8 @@ async function parseJsonOrError(res) {
     try {
         return JSON.parse(text);
     } catch (e) {
-        throw new Error(`Cloudflare/Login Block. Response: ${text.substring(0, 100)}...`);
+        // HTML ပြန်လာရင် Cloudflare Block တာဖြစ်နိုင်လို့ စာသားအဖြစ် ပြန်ပြမယ်
+        throw new Error(`Server Response not JSON (Possibly Blocked): ${text.substring(0, 150)}...`);
     }
 }
 
@@ -151,7 +154,7 @@ async function processChunkUpload(jobId, sourceUrl, filename) {
         // Step 2: Get Size
         const headRes = await fetch(sourceUrl, { method: 'HEAD' });
         const totalSize = Number(headRes.headers.get('content-length'));
-        if(!totalSize) throw new Error("Source file size unknown");
+        if(!totalSize) throw new Error("Source file size unknown (Cannot get Content-Length)");
 
         jobs.set(jobId, { status: 'uploading', uploaded: 0, total: totalSize });
 
@@ -173,7 +176,11 @@ async function processChunkUpload(jobId, sourceUrl, filename) {
         });
 
         const initData = await parseJsonOrError(initRes);
-        if(initData.code !== 0) throw new Error("Init Failed: " + initData.msg);
+        
+        // Error ရှိရင် အကြောင်းရင်းအပြည့်အစုံပြမယ်
+        if(initData.code !== 0) {
+             throw new Error("Init Failed: " + JSON.stringify(initData));
+        }
         
         const sessionID = initData.data;
 
