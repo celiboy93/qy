@@ -6,7 +6,7 @@ const CONFIG = {
   // 🔥 Worker Link အမှန်ထည့်ပါ
   workerUrl: "https://lugyiapk.telegram-iqowoq.workers.dev", 
   
-  // 🔥 Cookie မလိုတော့ပါ! Email/Password ထည့်ပါ
+  // 🔥 Email/Password ထည့်ပါ (Cookie မလိုတော့ပါ)
   email: "sswe0014@gmail.com",       
   password: "Soekyawwin@93", 
 };
@@ -18,11 +18,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Auto Login</title>
+      <title>Qyun Auto Login (Fixed)</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Auto-Login Uploader</h1>
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun Uploader (Auto-Login)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -31,7 +31,7 @@ app.get("/", (c) => {
         <label class="block mb-2 text-sm text-gray-400">Filename</label>
         <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <div class="mb-4 text-xs text-blue-300">Auth Mode: Auto Login via Worker</div>
+        <div class="mb-4 text-xs text-blue-300">Auth: Auto Login + Channel 2 via Worker</div>
 
         <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Upload</button>
         
@@ -53,7 +53,7 @@ app.get("/", (c) => {
 
           btn.disabled = true;
           statusDiv.classList.remove('hidden');
-          statusDiv.innerText = "Logging in & Getting Policy...";
+          statusDiv.innerText = "Worker is Logging in...";
           
           try {
             const startRes = await fetch('/api/upload', {
@@ -63,7 +63,8 @@ app.get("/", (c) => {
             const res = await startRes.json();
             
             if(res.status === 'uploading') {
-                statusDiv.innerText = "Login Success! Uploading...";
+                statusDiv.innerText = "Login OK! Uploading...";
+                statusDiv.className = "mt-4 p-2 bg-blue-900 rounded text-xs font-mono text-blue-200 break-words";
                 
                 const interval = setInterval(async () => {
                     const poll = await fetch('/api/status/' + res.jobId);
@@ -87,7 +88,7 @@ app.get("/", (c) => {
                     }
                 }, 2000);
             } else {
-                throw new Error(res.msg || JSON.stringify(res));
+                throw new Error(res.error || JSON.stringify(res));
             }
 
           } catch(e) {
@@ -127,7 +128,7 @@ async function processUpload(jobId, sourceUrl, filename) {
         const totalSize = Number(headRes.headers.get('content-length')) || 0;
         if(totalSize === 0) throw new Error("Source size error");
 
-        // 🔥 Step 1: Ask Worker to Login & Get Policy
+        // 🔥 Step 1: Call Worker (Auto Login + files.html request)
         const workerRes = await fetch(CONFIG.workerUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -148,6 +149,8 @@ async function processUpload(jobId, sourceUrl, filename) {
         }
 
         if (initData.error) throw new Error("Worker: " + initData.error);
+        
+        // Qyun (Custom) check
         if (!initData.policy) throw new Error("Login Failed or No Policy: " + JSON.stringify(initData));
 
         // 🔥 Step 2: Direct Upload to OSS
@@ -158,7 +161,6 @@ async function processUpload(jobId, sourceUrl, filename) {
             if(k !== 'action' && k !== 'host') uploadForm.append(k, initData[k]);
         }
         
-        // Generate key if missing from response
         if(!uploadForm.has("key")) {
              const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
              const key = `upload/${date}/${crypto.randomUUID()}_${filename}`;
