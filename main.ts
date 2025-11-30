@@ -5,14 +5,15 @@ const app = new Hono();
 // --- Configuration ---
 const CONFIG = {
   domain: "https://qyun.org",
-  // 🔥 Cookie
-  cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
   
-  // Channel ID (ပုံထဲကအတိုင်း 1)
+  // 🔥 အစ်ကိုပေးတဲ့ Cookie ကို ထည့်ထားပြီးပါပြီ
+  cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=NTRhZTc4N2QtN2UwNS00YWJjLTk4MTUtMDZjNjE4N2FhMmlw", 
+  
+  // Channel 2 (ID: 1)
   bucketId: "1", 
 };
 
-// Headers (Browser အတိုင်း)
+// Headers (Android Browser)
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
   "Referer": "https://qyun.org/files.html",
@@ -27,11 +28,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Browser Mimic</title>
+      <title>Qyun Final</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun Uploader (Browser Mode)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun Uploader (Ready)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -40,7 +41,7 @@ app.get("/", (c) => {
         <label class="block mb-2 text-sm text-gray-400">Filename</label>
         <input type="text" id="nameInput" placeholder="video.mp4" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <div class="mb-4 text-xs text-blue-300">Target: Channel ID ${CONFIG.bucketId}</div>
+        <div class="mb-4 text-xs text-blue-300">Target Channel ID: ${CONFIG.bucketId}</div>
 
         <button onclick="startUpload()" id="btn" class="w-full bg-purple-600 hover:bg-purple-700 py-2 rounded font-bold transition">Start Upload</button>
         
@@ -72,7 +73,7 @@ app.get("/", (c) => {
             const res = await startRes.json();
             
             if(res.status === 'uploading') {
-                statusDiv.innerText = "Got Policy! Uploading to Storage...";
+                statusDiv.innerText = "Uploading to Storage...";
                 
                 const interval = setInterval(async () => {
                     const poll = await fetch('/api/status/' + res.jobId);
@@ -137,13 +138,12 @@ async function processUpload(jobId, sourceUrl, filename) {
         const totalSize = Number(headRes.headers.get('content-length')) || 0;
         if(totalSize === 0) throw new Error("Source file size error");
 
-        // 2. Generate Key (Browser မှာလုပ်သလိုမျိုး)
+        // 2. Generate Key
         const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
         const uuid = crypto.randomUUID();
         const key = `upload/${date}/${uuid}_${filename}`;
 
-        // 3. Request Signature (Using POST Form Data to files.html)
-        // 🔥 အဓိက ပြင်ဆင်ချက်: JSON မသုံးတော့ဘဲ FormData သုံးပါမယ်
+        // 3. Request Signature (Using files.html endpoint)
         const formData = new FormData();
         formData.append("name", filename);
         formData.append("size", totalSize.toString());
@@ -167,26 +167,24 @@ async function processUpload(jobId, sourceUrl, filename) {
         try {
             initData = JSON.parse(initText);
         } catch(e) {
-            throw new Error(`Server returned HTML (Login/Block): ${initText.substring(0,100)}`);
+            throw new Error(`Server returned HTML (Login Issue): ${initText.substring(0,100)}`);
         }
 
-        // Qyun (Custom) returns data directly in initData
+        // Check Policy
         if (!initData.policy) {
-             throw new Error("Init Failed: " + JSON.stringify(initData));
+             throw new Error("Init Failed (No Policy): " + JSON.stringify(initData));
         }
 
         // 4. Upload to Storage
         const uploadUrl = initData.action || initData.host || "https://upload.qyun.org"; 
         const uploadForm = new FormData();
         
-        // Add all fields returned by Server (policy, signature, accessKey, etc.)
+        // Add fields
         for (const k in initData) {
             if(k !== 'action' && k !== 'host') {
                 uploadForm.append(k, initData[k]);
             }
         }
-        
-        // Ensure key is added
         if(!uploadForm.has("key")) uploadForm.append("key", key);
 
         // Fetch File Stream
