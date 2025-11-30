@@ -9,11 +9,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Fixer Pro</title>
+      <title>Qyun Pro Uploader</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun OSS Fixer (Rename)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun OSS Fixer (Timer Info)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         
@@ -23,12 +23,12 @@ app.get("/", (c) => {
         </div>
 
         <div class="mb-4">
-            <label class="block mb-2 text-sm text-gray-400">2. Paste Token JSON Here</label>
+            <label class="block mb-2 text-sm text-gray-400">2. Paste Token JSON</label>
             <textarea id="jsonInput" rows="4" class="w-full p-2 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono" placeholder='{"policy": "...", "signature": "..."}'></textarea>
         </div>
 
         <div class="mb-4">
-            <label class="block mb-2 text-sm text-green-400">3. Filename (Optional)</label>
+            <label class="block mb-2 text-sm text-green-400">3. Filename</label>
             <input type="text" id="nameInput" placeholder="my_movie.mp4" class="w-full p-2 rounded bg-gray-700 text-white border border-green-700">
         </div>
 
@@ -61,7 +61,8 @@ app.get("/", (c) => {
 
           btn.disabled = true;
           status.classList.remove('hidden');
-          status.innerText = "Downloading Source File...";
+          status.innerText = "Downloading Source File (Please Wait)...";
+          bar.style.width = '10%';
           
           try {
             const startRes = await fetch('/api/proxy-upload', {
@@ -71,28 +72,37 @@ app.get("/", (c) => {
             const res = await startRes.json();
             
             if(res.status === 'uploading') {
-                status.innerText = "Downloaded! Uploading to OSS...";
                 
+                let seconds = 0;
                 const interval = setInterval(async () => {
+                    seconds++;
                     const poll = await fetch('/api/status/' + res.jobId);
                     const pData = await poll.json();
                     
-                    if(pData.status === 'uploading') {
-                       bar.style.width = '50%'; 
-                       status.innerText = "Uploading to OSS... (Please Wait)";
-                    } else if(pData.status === 'completed') {
+                    if(pData.status === 'downloading') {
+                       bar.style.width = '30%';
+                       status.innerText = \`Downloading to Deno Server... (\${seconds}s)\`;
+                    } 
+                    else if(pData.status === 'uploading_oss') {
+                       bar.style.width = '70%'; 
+                       // Show Size and Time
+                       status.innerText = \`Uploading \${pData.size} MB to OSS... Time: \${seconds}s (Don't Close)\`;
+                       status.className = "mt-4 p-2 bg-blue-900 text-blue-100 rounded text-xs break-words";
+                    } 
+                    else if(pData.status === 'completed') {
                        clearInterval(interval);
                        bar.style.width = '100%';
                        status.innerText = "✅ Upload Success! File: " + pData.filename;
                        status.className = "mt-4 p-2 bg-green-900 text-green-100 rounded text-xs break-words";
                        btn.disabled = false;
-                    } else if(pData.status === 'failed') {
+                    } 
+                    else if(pData.status === 'failed') {
                        clearInterval(interval);
                        status.innerText = "❌ Failed: " + pData.error;
                        status.className = "mt-4 p-2 bg-red-900 text-red-100 rounded text-xs break-words";
                        btn.disabled = false;
                     }
-                }, 2000);
+                }, 1000);
             } else {
                 throw new Error(res.error || "Unknown Error");
             }
@@ -115,7 +125,6 @@ app.post("/api/proxy-upload", async (c) => {
   const { url, token, name } = await c.req.json();
   const jobId = crypto.randomUUID();
 
-  // Name handling
   let filename = name && name.trim() ? name.trim() : "";
   if (filename && !filename.includes('.')) filename += '.mp4';
 
@@ -133,6 +142,8 @@ app.get("/api/status/:id", (c) => c.json(jobs.get(c.req.param('id')) || {}));
 
 async function runUpload(jobId, sourceUrl, token, customName) {
     try {
+        jobs.set(jobId, { status: 'downloading' });
+
         // 1. Determine Upload URL
         let uploadUrl = "https://upload.qyun.org";
         if (token.hosts && token.hosts.length > 0) {
@@ -141,43 +152,38 @@ async function runUpload(jobId, sourceUrl, token, customName) {
             uploadUrl = token.host;
         }
 
-        // 2. Download File to Memory (Fixes HTTP2 Stream Error)
+        // 2. Download File
         const fileRes = await fetch(sourceUrl);
         if (!fileRes.ok) throw new Error("Source Download Failed");
         const blob = await fileRes.blob(); 
+        
+        // Calculate Size for UI
+        const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
+        
+        // Update Status to Uploading Phase
+        jobs.set(jobId, { status: 'uploading_oss', size: sizeMB });
 
         // 3. Prepare FormData
         const formData = new FormData();
-        
-        // Add all fields from Token JSON
         for (const key in token) {
             if (key !== 'hosts' && key !== 'id') {
                 formData.append(key, token[key]);
             }
         }
 
-        if (!formData.has("key")) {
-             throw new Error("Token JSON missing 'key' field");
-        }
+        if (!formData.has("key")) throw new Error("Token JSON missing 'key'");
 
-        // 4. Filename Logic
-        // Token ထဲက Key အတိုင်းဖြစ်နေရင်တောင် Browser ကပို့တဲ့ filename header ကို ပြင်ပေးလိုက်တာပါ
         let finalFilename = "video.mp4";
-        
         if (customName) {
             finalFilename = customName;
         } else {
-            // No custom name? Try to get from key
             const keyVal = formData.get("key")?.toString();
             if(keyVal) finalFilename = keyVal.split('/').pop();
         }
 
-        // Append File with specific filename (Important!)
         formData.append("file", blob, finalFilename);
 
-        jobs.set(jobId, { status: 'uploading' });
-
-        // 5. Upload to OSS
+        // 4. Upload to OSS
         const uploadRes = await fetch(uploadUrl, {
             method: "POST",
             headers: {
