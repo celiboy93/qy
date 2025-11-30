@@ -9,148 +9,95 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Manual Uploader</title>
+      <title>Qyun Final Upload</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
-    <body class="p-4 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-blue-400">Qyun 100% Working Uploader</h1>
+    <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
+      <h1 class="text-2xl font-bold mb-4 text-green-400">Qyun 100% Uploader</h1>
       
-      <!-- Step 1 -->
-      <div class="bg-gray-800 p-4 rounded-lg shadow-lg mb-4">
-        <h2 class="text-lg font-bold text-yellow-400 mb-2">အဆင့် (၁) - ဖိုင်အချက်အလက်ယူရန်</h2>
-        <input type="text" id="urlInput" placeholder="Source Video URL..." class="w-full p-2 mb-2 rounded bg-gray-700 border border-gray-600 text-white">
-        <input type="text" id="nameInput" placeholder="Filename.mp4" class="w-full p-2 mb-2 rounded bg-gray-700 border border-gray-600 text-white">
-        <button onclick="step1()" id="btn1" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold">Get JS Code</button>
-      </div>
+      <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
+        <!-- Step 1 -->
+        <label class="block mb-2 text-sm text-gray-400">1. Source Video URL</label>
+        <input type="text" id="urlInput" placeholder="https://..." class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
+        
+        <!-- Step 2 -->
+        <label class="block mb-2 text-sm text-gray-400">2. Paste Token JSON Here</label>
+        <p class="text-xs text-gray-500 mb-2">(Console မှာပေါ်တဲ့ {"success":true...} အကုန်ကူးထည့်ပါ)</p>
+        <textarea id="tokenInput" placeholder='{"success":true, "data": {...}}' class="w-full h-40 p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono"></textarea>
 
-      <!-- Step 2 -->
-      <div id="step2" class="bg-gray-800 p-4 rounded-lg shadow-lg mb-4 hidden">
-        <h2 class="text-lg font-bold text-yellow-400 mb-2">အဆင့် (၂) - လက်မှတ်တောင်းရန်</h2>
-        <p class="text-xs text-gray-300 mb-2">
-           ၁။ အောက်က Code ကို Copy ကူးပါ။<br>
-           ၂။ Qyun.org (Login ဝင်ထားသော Tab) > <b>Console</b> မှာ Paste လုပ်ပြီး Enter ခေါက်ပါ။<br>
-           ၃။ ထွက်လာတဲ့ စာအရှည်ကြီး (JSON) ကို Copy ကူးခဲ့ပါ။
-        </p>
-        <textarea id="jsCode" readonly class="w-full h-32 p-2 text-xs bg-black text-green-400 rounded font-mono mb-2" onclick="this.select()"></textarea>
-        <button onclick="copyCode()" class="bg-gray-600 px-3 py-1 rounded text-xs">Copy Code</button>
-      </div>
-
-      <!-- Step 3 -->
-      <div id="step3" class="bg-gray-800 p-4 rounded-lg shadow-lg mb-4 hidden">
-        <h2 class="text-lg font-bold text-yellow-400 mb-2">အဆင့် (၃) - Upload တင်ရန်</h2>
-        <textarea id="tokenInput" placeholder='Paste JSON here (e.g. {"policy": "...", "signature": "..."})' class="w-full h-32 p-2 text-xs bg-gray-700 border border-gray-600 rounded mb-2 text-white"></textarea>
-        <button onclick="step3()" id="btn3" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold">Start Upload Now</button>
+        <button onclick="startUpload()" id="btn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-bold transition">Start Upload</button>
         
         <div class="mt-4 bg-gray-900 rounded-full h-2.5 overflow-hidden">
              <div id="progressBar" class="bg-green-500 h-2.5 rounded-full" style="width: 0%"></div>
         </div>
-        <div id="status" class="mt-2 text-center text-xs text-yellow-400">Waiting...</div>
+        <div id="status" class="mt-2 text-center text-xs text-yellow-400 break-words">Waiting for Token...</div>
       </div>
 
       <script>
-        let fileData = {};
-
-        async function step1() {
+        async function startUpload() {
           const url = document.getElementById('urlInput').value;
-          const name = document.getElementById('nameInput').value;
+          const tokenStr = document.getElementById('tokenInput').value;
+          const btn = document.getElementById('btn');
+          const statusDiv = document.getElementById('status');
+          const bar = document.getElementById('progressBar');
+
           if(!url) return alert("Link လိုပါတယ်");
-          
-          document.getElementById('btn1').disabled = true;
-          document.getElementById('btn1').innerText = "Checking File Size...";
+          if(!tokenStr) return alert("JSON Token ထည့်ပါ");
 
+          let token;
           try {
-              const res = await fetch('/api/check-size', {
-                 method: 'POST', body: JSON.stringify({url, name})
-              });
-              const data = await res.json();
-              
-              if(data.error) {
-                 alert("Error: " + data.error);
-                 document.getElementById('btn1').disabled = false;
-                 return;
-              }
-
-              fileData = data; // Save for later
-              
-              // Generate JS Code for user
-              // Channel 2 (ID: 1) ကို အသေထည့်ပေးထားပါတယ်
-              const js = \`
-var f = new FormData();
-f.append("name", "\${data.filename}");
-f.append("size", "\${data.size}");
-f.append("type", "video/mp4");
-f.append("key", "\${data.key}");
-f.append("bucketId", "1"); 
-f.append("folderId", "");
-
-fetch("/files.html?folderId=", { method: "POST", body: f })
-.then(r => r.text())
-.then(t => console.log(t))
-.catch(e => console.error(e));
-\`;
-              document.getElementById('jsCode').value = js.trim();
-              document.getElementById('step2').classList.remove('hidden');
-              document.getElementById('step3').classList.remove('hidden');
-              document.getElementById('btn1').innerText = "Done";
+             token = JSON.parse(tokenStr);
           } catch(e) {
-              alert(e.message);
-              document.getElementById('btn1').disabled = false;
+             return alert("JSON ပုံစံမှားနေပါတယ် (ကူးတာမစုံလို့ ဖြစ်နိုင်တယ်)");
           }
-        }
 
-        function copyCode() {
-           const copyText = document.getElementById("jsCode");
-           copyText.select();
-           navigator.clipboard.writeText(copyText.value);
-           alert("Code Copied!");
-        }
+          // Validate Token Structure
+          if (!token.data || !token.data.OSSAccessKeyId) {
+             return alert("JSON မှားနေပါတယ် (OSSAccessKeyId မပါပါ)");
+          }
 
-        async function step3() {
-           const tokenJson = document.getElementById('tokenInput').value;
-           if(!tokenJson) return alert("JSON ထည့်ပါ");
-           
-           let parsedToken;
-           try {
-               parsedToken = JSON.parse(tokenJson);
-           } catch(e) { return alert("Invalid JSON format (Copy သေချာမကူးခဲ့ပါ)"); }
-
-           if(!parsedToken.policy) return alert("JSON မှားနေသည် (Policy မပါပါ)");
-
-           document.getElementById('btn3').disabled = true;
-           document.getElementById('status').innerText = "Uploading to OSS...";
-
-           const startRes = await fetch('/api/upload', {
-               method: 'POST',
-               body: JSON.stringify({
-                   url: document.getElementById('urlInput').value,
-                   token: parsedToken,
-                   key: fileData.key,
-                   filename: fileData.filename
-               })
-           });
-           
-           const res = await startRes.json();
-           const jobId = res.jobId;
-           
-           const interval = setInterval(async () => {
-                const poll = await fetch('/api/status/' + jobId);
-                const pData = await poll.json();
+          btn.disabled = true;
+          statusDiv.innerText = "Processing...";
+          
+          try {
+            const startRes = await fetch('/api/upload', {
+                method: 'POST', 
+                body: JSON.stringify({url, token})
+            });
+            const res = await startRes.json();
+            
+            if(res.status === 'uploading') {
+                statusDiv.innerText = "Deno is uploading to OSS...";
                 
-                if(pData.status === 'uploading') {
-                    const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
-                    document.getElementById('progressBar').style.width = pct + '%';
-                    document.getElementById('status').innerText = \`Uploading: \${pct}% (\${(pData.uploaded/1024/1024).toFixed(1)} MB)\`;
-                } else if(pData.status === 'completed') {
-                    clearInterval(interval);
-                    document.getElementById('progressBar').style.width = '100%';
-                    document.getElementById('status').innerText = "✅ Upload Success!";
-                    document.getElementById('btn3').disabled = false;
-                } else if(pData.status === 'failed') {
-                    clearInterval(interval);
-                    document.getElementById('status').innerText = "❌ Error: " + pData.error;
-                    document.getElementById('btn3').disabled = false;
-                }
-            }, 2000);
+                const interval = setInterval(async () => {
+                    const poll = await fetch('/api/status/' + res.jobId);
+                    const pData = await poll.json();
+                    
+                    if(pData.status === 'uploading') {
+                       const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
+                       bar.style.width = pct + '%';
+                       statusDiv.innerText = \`Uploading: \${pct}% (\${(pData.uploaded/1024/1024).toFixed(1)} MB)\`;
+                    } else if(pData.status === 'completed') {
+                       clearInterval(interval);
+                       bar.style.width = '100%';
+                       statusDiv.innerText = "✅ Upload Success!";
+                       statusDiv.className = "mt-2 text-center text-xs text-green-400";
+                       btn.disabled = false;
+                    } else if(pData.status === 'failed') {
+                       clearInterval(interval);
+                       statusDiv.innerText = "❌ Error: " + pData.error;
+                       statusDiv.className = "mt-2 text-center text-xs text-red-400";
+                       btn.disabled = false;
+                    }
+                }, 2000);
+            } else {
+                throw new Error(res.msg || JSON.stringify(res));
+            }
+
+          } catch(e) {
+            statusDiv.innerText = "Error: " + e.message;
+            btn.disabled = false;
+          }
         }
       </script>
     </body>
@@ -161,71 +108,66 @@ fetch("/files.html?folderId=", { method: "POST", body: f })
 
 const jobs = new Map();
 
-// Step 1 API
-app.post("/api/check-size", async (c) => {
-    const { url, name } = await c.req.json();
-    try {
-        const head = await fetch(url, {method: 'HEAD'});
-        const size = Number(head.headers.get('content-length'));
-        if(!size) throw new Error("File Size မရပါ (Link စစ်ပါ)");
-        
-        let filename = name && name.trim() ? name.trim() : url.split('/').pop().split('?')[0];
-        if (!filename.includes('.')) filename += '.mp4';
-
-        const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
-        const key = `upload/${date}/${crypto.randomUUID()}_${filename}`;
-        
-        return c.json({ size, key, filename });
-    } catch(e) { return c.json({ error: e.message }); }
-});
-
-// Step 3 API
 app.post("/api/upload", async (c) => {
-    const { url, token, key, filename } = await c.req.json();
-    const jobId = crypto.randomUUID();
-    
-    // Background Upload
-    jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
+  const { url, token } = await c.req.json();
+  const jobId = crypto.randomUUID();
 
-    (async () => {
-        try {
-            // OSS Upload URL (Aliyun Hong Kong)
-            const uploadUrl = token.action || token.host || "https://lark-cloud.oss-cn-hongkong.aliyuncs.com";
-            
-            const uploadForm = new FormData();
-            
-            // Token Fields
-            for (const k in token) {
-                if(k !== 'action' && k !== 'host') uploadForm.append(k, token[k]);
-            }
-            if(!uploadForm.has("key")) uploadForm.append("key", key);
+  jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
+  
+  processManualUpload(jobId, url, token).catch(e => {
+      jobs.set(jobId, { status: 'failed', error: e.message });
+  });
 
-            // Stream File
-            const fileRes = await fetch(url);
-            const blob = await fileRes.blob();
-            
-            // OSS needs 'file' as last parameter
-            uploadForm.append("file", blob, filename);
-            
-            jobs.set(jobId, { status: 'uploading', uploaded: 0, total: blob.size }); 
-
-            const upRes = await fetch(uploadUrl, { method: "POST", body: uploadForm });
-            
-            if(upRes.ok || upRes.status === 204 || upRes.status === 200) {
-                jobs.set(jobId, { status: 'completed', uploaded: blob.size, total: blob.size });
-            } else {
-                const txt = await upRes.text();
-                throw new Error(`OSS Error: ${upRes.status} ${txt.substring(0,100)}`);
-            }
-
-        } catch(e) {
-            jobs.set(jobId, { status: 'failed', error: e.message });
-        }
-    })();
-
-    return c.json({ jobId });
+  return c.json({ status: "uploading", jobId });
 });
 
 app.get("/api/status/:id", (c) => c.json(jobs.get(c.req.param('id')) || {}));
+
+async function processManualUpload(jobId, sourceUrl, token) {
+    try {
+        // Parse the special OSS Token Structure
+        const ossData = token.data;
+        if(!ossData) throw new Error("Invalid Token Data");
+
+        // Use the second host (usually aliyuncs.com is more stable for API)
+        const uploadUrl = ossData.hosts[1] || ossData.hosts[0];
+        
+        // Prepare Form
+        const form = new FormData();
+        form.append("OSSAccessKeyId", ossData.OSSAccessKeyId);
+        form.append("policy", ossData.policy);
+        form.append("Signature", ossData.signature);
+        form.append("key", ossData.key);
+        form.append("success_action_status", "200"); // Important for OSS
+
+        // Get File Stream
+        const fileRes = await fetch(sourceUrl);
+        if(!fileRes.ok) throw new Error("Cannot fetch source video");
+        
+        const totalSize = Number(fileRes.headers.get('content-length')) || 0;
+        const blob = await fileRes.blob();
+        
+        // Append file last
+        form.append("file", blob, "video.mp4");
+
+        jobs.set(jobId, { status: 'uploading', uploaded: 0, total: totalSize || blob.size });
+
+        // Upload to OSS
+        const uploadRes = await fetch(uploadUrl, {
+            method: "POST",
+            body: form
+        });
+
+        if (uploadRes.ok || uploadRes.status === 200 || uploadRes.status === 204) {
+             jobs.set(jobId, { status: 'completed', uploaded: totalSize, total: totalSize });
+        } else {
+             const errTxt = await uploadRes.text();
+             throw new Error(`OSS Rejected: ${uploadRes.status} - ${errTxt.substring(0, 100)}`);
+        }
+
+    } catch (e) {
+        jobs.set(jobId, { status: 'failed', error: e.message });
+    }
+}
 
 Deno.serve(app.fetch);
