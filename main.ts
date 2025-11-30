@@ -8,16 +8,13 @@ const CONFIG = {
   // 🔥 Cookie ကို ဒီမှာ ထည့်ပါ
   cookie: "remember-me=c3N3ZTAwMTQINDBnbWFpbC5jb206MTc2NTA2MTAwMTQ2OTpTSEEYNTY60DFmOGMYYTFIYTAWNWIyNjJhOWNKZTdhZGVmOWFkNDE2ZjVIODEXYmVIZGIwNDYOYzYONDFIOTZjYTNkMjE5Ng; SESSION=ZDJhMTI0ZWYtMmU5NC00ZWNjLTg4YTctZWlyNDUzMzYwMGZj", 
   
-  // Channel ID (ပုံထဲကအတိုင်း 1 သို့မဟုတ် 2 စမ်းပါ)
+  // OSS Upload မှာ bucketId လိုချင်မှ လိုမယ်၊ ဒါပေမဲ့ ထည့်ထားတာ မမှားပါဘူး
   bucketId: "1", 
-  
-  chunkSize: 9 * 1024 * 1024,
 };
 
-// Android Header
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
-  "Referer": "https://qyun.org/files.html?folderId=",
+  "Referer": "https://qyun.org/files.html",
   "Origin": "https://qyun.org",
   "X-Requested-With": "XMLHttpRequest",
 };
@@ -29,11 +26,11 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Debug Uploader</title>
+      <title>Qyun OSS Uploader</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-yellow-400">Qyun Uploader (Debug Mode)</h1>
+      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun OSS Uploader</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
         <label class="block mb-2 text-sm text-gray-400">Source Video URL</label>
@@ -45,12 +42,11 @@ app.get("/", (c) => {
         <label class="block mb-2 text-sm text-blue-400">Channel ID (Bucket ID)</label>
         <input type="text" id="bucketInput" value="1" class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
 
-        <button onclick="startUpload()" id="btn" class="w-full bg-yellow-600 hover:bg-yellow-700 py-2 rounded font-bold transition">Start Upload</button>
+        <button onclick="startUpload()" id="btn" class="w-full bg-purple-600 hover:bg-purple-700 py-2 rounded font-bold transition">Start Upload</button>
         
         <div class="mt-4 bg-gray-900 rounded-full h-2.5 overflow-hidden">
-             <div id="progressBar" class="bg-yellow-500 h-2.5 rounded-full" style="width: 0%"></div>
+             <div id="progressBar" class="bg-purple-500 h-2.5 rounded-full" style="width: 0%"></div>
         </div>
-        <!-- Error Message Area -->
         <div id="status" class="mt-4 p-2 bg-gray-900 rounded text-xs font-mono text-gray-300 break-words hidden"></div>
       </div>
 
@@ -69,8 +65,7 @@ app.get("/", (c) => {
           btn.disabled = true;
           statusDiv.classList.remove('hidden');
           statusDiv.innerText = "Connecting...";
-          statusDiv.className = "mt-4 p-2 bg-gray-900 rounded text-xs font-mono text-blue-300 break-words";
-
+          
           try {
             const startRes = await fetch('/api/upload', {
                 method: 'POST', 
@@ -79,7 +74,7 @@ app.get("/", (c) => {
             const res = await startRes.json();
             
             if(res.status === 'uploading') {
-                statusDiv.innerText = "Signature OK! Uploading...";
+                statusDiv.innerText = "Uploading to OSS...";
                 
                 const interval = setInterval(async () => {
                     const poll = await fetch('/api/status/' + res.jobId);
@@ -88,11 +83,11 @@ app.get("/", (c) => {
                     if(pData.status === 'uploading') {
                        const pct = Math.round((pData.uploaded / pData.total) * 100) || 0;
                        bar.style.width = pct + '%';
-                       statusDiv.innerText = \`Uploading: \${pct}%\`;
+                       statusDiv.innerText = \`Uploading: \${pct}% (\${(pData.uploaded/1024/1024).toFixed(1)} MB)\`;
                     } else if(pData.status === 'completed') {
                        clearInterval(interval);
                        bar.style.width = '100%';
-                       statusDiv.innerText = "✅ Upload Success!";
+                       statusDiv.innerText = "✅ Success! File Uploaded.";
                        statusDiv.className = "mt-4 p-2 bg-green-900 rounded text-xs font-mono text-green-200 break-words";
                        btn.disabled = false;
                     } else if(pData.status === 'failed') {
@@ -129,7 +124,7 @@ app.post("/api/upload", async (c) => {
 
   jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
   
-  processUpload(jobId, url, filename, bucketId || CONFIG.bucketId).catch(e => {
+  processOSSUpload(jobId, url, filename, bucketId).catch(e => {
       jobs.set(jobId, { status: 'failed', error: e.message });
   });
 
@@ -138,78 +133,81 @@ app.post("/api/upload", async (c) => {
 
 app.get("/api/status/:id", (c) => c.json(jobs.get(c.req.param('id')) || {}));
 
-async function processUpload(jobId, sourceUrl, filename, bucketId) {
+async function processOSSUpload(jobId, sourceUrl, filename, bucketId) {
     try {
         // 1. Get File Size
         const headRes = await fetch(sourceUrl, { method: 'HEAD' });
         const totalSize = Number(headRes.headers.get('content-length')) || 0;
-        if(totalSize === 0) throw new Error("File size 0 or URL invalid");
+        if(totalSize === 0) throw new Error("Source file size unknown");
 
-        // 2. Generate Key
-        const date = new Date().toISOString().slice(0,10).replace(/-/g,'/'); 
-        const uuid = crypto.randomUUID();
-        const key = `upload/${date}/${uuid}_${filename}`;
-
-        // 3. Request Signature
+        // 2. Request Policy from Qyun
+        // Qyun မှာ OSS upload အတွက် Token တောင်းတဲ့ပုံစံ
         const formData = new FormData();
         formData.append("name", filename);
         formData.append("size", totalSize.toString());
         formData.append("type", "video/mp4");
-        formData.append("key", key);
-        formData.append("bucketId", bucketId); 
-        formData.append("folderId", "");
-
+        // bucketId or policy_id
+        formData.append("bucketId", bucketId || "1"); 
+        
+        // ဒီ endpoint က အစ်ကို့ပုံထဲကအတိုင်းပါ
         const initRes = await fetch(`${CONFIG.domain}/files.html?folderId=`, {
             method: "POST",
-            headers: { "Cookie": CONFIG.cookie, ...HEADERS },
+            headers: { 
+                "Cookie": CONFIG.cookie, 
+                ...HEADERS 
+            },
             body: formData
         });
 
+        // 3. Parse Response
         const initText = await initRes.text();
         let initData;
+        
+        // HTML ပြန်လာရင် Cookie/Login မှားနေတာ
+        if(initText.trim().startsWith("<")) {
+             throw new Error(`Login Failed (HTML Returned). Check Cookie.`);
+        }
+
         try {
             initData = JSON.parse(initText);
         } catch(e) {
-            // HTML ပြန်လာရင် Login ကျနေတာ
-            throw new Error(`Login Error: Server returned HTML instead of JSON. Check Cookie.`);
+            throw new Error(`Invalid JSON: ${initText.substring(0, 100)}`);
         }
 
-        // 🔥 FIX: Check if policy exists (Success) OR code !== 0 (Error)
-        // တကယ်လို့ policy ပါလာရင် အောင်မြင်တယ်လို့ ယူဆမယ်
+        // Policy မပါရင် Error
         if (!initData.policy) {
-             // Policy မပါဘူး၊ code လည်း 0 မဟုတ်ဘူးဆိုရင် Error ပြမယ်
-             if(initData.code && initData.code !== 0) {
-                 throw new Error("Init Failed: " + (initData.msg || JSON.stringify(initData)));
-             }
-             // ဘာမှမပါရင် Response တစ်ခုလုံးထုတ်ပြမယ် (Debug လုပ်ဖို့)
-             throw new Error("Unknown Response: " + JSON.stringify(initData));
+             throw new Error("No Policy returned: " + JSON.stringify(initData));
         }
 
-        // 4. Upload
-        const uploadUrl = initData.action || initData.host || "https://upload.qyun.org"; 
-        const uploadForm = new FormData();
+        // 4. Construct OSS Upload Form
+        const uploadUrl = initData.host || initData.action || "https://upload.qyun.org";
+        const ossForm = new FormData();
         
+        // Add all required fields (OSSAccessKeyId, policy, signature, key, etc.)
         for (const k in initData) {
-            if(k !== 'action' && k !== 'host') uploadForm.append(k, initData[k]);
+            if(k !== 'host' && k !== 'action') {
+                ossForm.append(k, initData[k]);
+            }
         }
-        if(!uploadForm.has("key")) uploadForm.append("key", key);
-
+        
+        // File Stream
         const fileRes = await fetch(sourceUrl);
-        const blob = await fileRes.blob(); 
-        uploadForm.append("file", blob, filename);
+        const blob = await fileRes.blob();
+        ossForm.append("file", blob, filename);
 
         jobs.set(jobId, { status: 'uploading', uploaded: 0, total: totalSize });
 
+        // 5. Upload to OSS
         const uploadRes = await fetch(uploadUrl, {
             method: "POST",
-            body: uploadForm
+            body: ossForm
         });
 
         if (uploadRes.ok || uploadRes.status === 204 || uploadRes.status === 200) {
              jobs.set(jobId, { status: 'completed', uploaded: totalSize, total: totalSize });
         } else {
              const errTxt = await uploadRes.text();
-             throw new Error(`Upload Failed: ${uploadRes.status} ${errTxt.substring(0,100)}`);
+             throw new Error(`OSS Upload Failed: ${uploadRes.status} ${errTxt}`);
         }
 
     } catch (e) {
