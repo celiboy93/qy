@@ -9,84 +9,96 @@ app.get("/", (c) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Qyun Debug Streamer</title>
+      <title>Qyun Fixer Pro</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="p-6 bg-gray-900 text-white max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold mb-4 text-blue-400">Qyun Debug Streamer</h1>
+      <h1 class="text-2xl font-bold mb-4 text-purple-400">Qyun OSS Fixer (Rename)</h1>
       
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
-        <label class="block mb-2 text-sm text-gray-400">1. Source Video URL</label>
-        <input type="text" id="urlInput" placeholder="https://..." class="w-full p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600">
         
-        <label class="block mb-2 text-sm text-gray-400">2. Paste Token JSON</label>
-        <textarea id="tokenInput" placeholder='Paste JSON from console...' class="w-full h-32 p-2 mb-4 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono"></textarea>
-
-        <button onclick="startUpload()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold transition">Start Upload</button>
-        
-        <!-- Logs Area -->
-        <div id="logs" class="mt-4 p-3 bg-black rounded text-xs font-mono text-green-300 h-40 overflow-y-auto border border-gray-700">
-            Waiting for input...
+        <div class="mb-4">
+            <label class="block mb-2 text-sm text-gray-400">1. Source Video URL</label>
+            <input type="text" id="urlInput" placeholder="https://..." class="w-full p-2 rounded bg-gray-700 text-white border border-gray-600">
         </div>
+
+        <div class="mb-4">
+            <label class="block mb-2 text-sm text-gray-400">2. Paste Token JSON Here</label>
+            <textarea id="jsonInput" rows="4" class="w-full p-2 rounded bg-gray-700 text-white border border-gray-600 text-xs font-mono" placeholder='{"policy": "...", "signature": "..."}'></textarea>
+        </div>
+
+        <div class="mb-4">
+            <label class="block mb-2 text-sm text-green-400">3. Filename (Optional)</label>
+            <input type="text" id="nameInput" placeholder="my_movie.mp4" class="w-full p-2 rounded bg-gray-700 text-white border border-green-700">
+        </div>
+
+        <button onclick="startUpload()" id="btn" class="w-full bg-purple-600 hover:bg-purple-700 py-2 rounded font-bold transition">Start Upload</button>
+        
+        <div class="mt-4 bg-gray-900 rounded-full h-2.5 overflow-hidden">
+             <div id="progressBar" class="bg-purple-500 h-2.5 rounded-full" style="width: 0%"></div>
+        </div>
+        <div id="status" class="mt-4 p-2 bg-black rounded text-xs font-mono text-green-300 break-words hidden"></div>
       </div>
 
       <script>
-        function log(msg, type='info') {
-            const logs = document.getElementById('logs');
-            const color = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-gray-300');
-            logs.innerHTML += \`<div class="\${color}">[\${new Date().toLocaleTimeString()}] \${msg}</div>\`;
-            logs.scrollTop = logs.scrollHeight;
-        }
-
         async function startUpload() {
           const url = document.getElementById('urlInput').value;
-          const tokenStr = document.getElementById('tokenInput').value;
+          const jsonStr = document.getElementById('jsonInput').value;
+          const customName = document.getElementById('nameInput').value;
+          
+          const status = document.getElementById('status');
           const btn = document.getElementById('btn');
+          const bar = document.getElementById('progressBar');
 
-          if(!url || !tokenStr) return alert("Data ဖြည့်ပါ");
+          if(!url || !jsonStr) return alert("Link နှင့် Token ထည့်ပါ");
+
+          let tokenData;
+          try {
+             tokenData = JSON.parse(jsonStr);
+          } catch(e) {
+             return alert("JSON Format မှားနေပါတယ်");
+          }
 
           btn.disabled = true;
-          document.getElementById('logs').innerHTML = ''; // Clear logs
-          log("🚀 Starting process...");
+          status.classList.remove('hidden');
+          status.innerText = "Downloading Source File...";
           
           try {
-            const startRes = await fetch('/api/upload', {
+            const startRes = await fetch('/api/proxy-upload', {
                 method: 'POST', 
-                body: JSON.stringify({url, tokenStr})
+                body: JSON.stringify({ url, token: tokenData, name: customName })
             });
             const res = await startRes.json();
             
             if(res.status === 'uploading') {
-                log("📡 Stream connected! Monitoring...", "success");
+                status.innerText = "Downloaded! Uploading to OSS...";
                 
                 const interval = setInterval(async () => {
                     const poll = await fetch('/api/status/' + res.jobId);
                     const pData = await poll.json();
                     
                     if(pData.status === 'uploading') {
-                       const mbLoaded = (pData.uploaded / (1024 * 1024)).toFixed(1);
-                       const mbTotal = (pData.total / (1024 * 1024)).toFixed(1);
-                       const pct = Math.round((pData.uploaded / pData.total) * 100);
-                       // Update only last line to avoid spam
-                       // log(\`Uploading: \${pct}% (\${mbLoaded}/\${mbTotal} MB)\`); 
-                       document.title = \`Uploading \${pct}%\`;
+                       bar.style.width = '50%'; 
+                       status.innerText = "Uploading to OSS... (Please Wait)";
                     } else if(pData.status === 'completed') {
                        clearInterval(interval);
-                       log("✅ Upload SUCCESS! File is on Qyun.", "success");
+                       bar.style.width = '100%';
+                       status.innerText = "✅ Upload Success! File: " + pData.filename;
+                       status.className = "mt-4 p-2 bg-green-900 text-green-100 rounded text-xs break-words";
                        btn.disabled = false;
                     } else if(pData.status === 'failed') {
                        clearInterval(interval);
-                       log("❌ FAILED: " + pData.error, "error");
+                       status.innerText = "❌ Failed: " + pData.error;
+                       status.className = "mt-4 p-2 bg-red-900 text-red-100 rounded text-xs break-words";
                        btn.disabled = false;
                     }
                 }, 2000);
             } else {
-                log("❌ Init Error: " + (res.error || JSON.stringify(res)), "error");
-                btn.disabled = false;
+                throw new Error(res.error || "Unknown Error");
             }
 
           } catch(e) {
-            log("❌ Client Error: " + e.message, "error");
+            status.innerText = "Client Error: " + e.message;
             btn.disabled = false;
           }
         }
@@ -99,13 +111,18 @@ app.get("/", (c) => {
 
 const jobs = new Map();
 
-app.post("/api/upload", async (c) => {
-  const { url, tokenStr } = await c.req.json();
+app.post("/api/proxy-upload", async (c) => {
+  const { url, token, name } = await c.req.json();
   const jobId = crypto.randomUUID();
 
-  jobs.set(jobId, { status: 'starting', uploaded: 0, total: 0 });
+  // Name handling
+  let filename = name && name.trim() ? name.trim() : "";
+  if (filename && !filename.includes('.')) filename += '.mp4';
+
+  jobs.set(jobId, { status: 'starting' });
   
-  processDebugUpload(jobId, url, tokenStr).catch(e => {
+  // Background Process
+  runUpload(jobId, url, token, filename).catch(e => {
       jobs.set(jobId, { status: 'failed', error: e.message });
   });
 
@@ -114,97 +131,66 @@ app.post("/api/upload", async (c) => {
 
 app.get("/api/status/:id", (c) => c.json(jobs.get(c.req.param('id')) || {}));
 
-async function processDebugUpload(jobId, sourceUrl, tokenStr) {
+async function runUpload(jobId, sourceUrl, token, customName) {
     try {
-        // 1. Parse Token
-        let ossData;
-        try {
-            const parsed = JSON.parse(tokenStr);
-            ossData = parsed.data || parsed; // Handle {data: ...} or direct {...}
-        } catch { throw new Error("Invalid JSON Token"); }
+        // 1. Determine Upload URL
+        let uploadUrl = "https://upload.qyun.org";
+        if (token.hosts && token.hosts.length > 0) {
+            uploadUrl = token.hosts[0]; 
+        } else if (token.host) {
+            uploadUrl = token.host;
+        }
 
-        if(!ossData.OSSAccessKeyId) throw new Error("Token missing OSSAccessKeyId");
+        // 2. Download File to Memory (Fixes HTTP2 Stream Error)
+        const fileRes = await fetch(sourceUrl);
+        if (!fileRes.ok) throw new Error("Source Download Failed");
+        const blob = await fileRes.blob(); 
 
-        // Try using the FIRST host (usually safer) or fallback to second
-        const uploadUrl = (ossData.hosts && ossData.hosts[0]) ? ossData.hosts[0] : ossData.host;
+        // 3. Prepare FormData
+        const formData = new FormData();
         
-        // 2. Test Source URL Connection
-        const headCheck = await fetch(sourceUrl, { method: 'HEAD' });
-        const totalSize = Number(headCheck.headers.get('content-length')) || 0;
-        
-        if (!headCheck.ok) {
-             throw new Error(`Source Link Error: ${headCheck.status} ${headCheck.statusText} (Deno cannot download this link)`);
-        }
-        if (totalSize === 0) {
-             throw new Error("Source file has 0 size or hidden Content-Length");
-        }
-
-        // 3. Prepare Multipart Stream
-        const boundary = "----DenoDebugBoundary" + crypto.randomUUID();
-        const crlf = "\r\n";
-        const encoder = new TextEncoder();
-
-        function createPart(name, value) {
-            return encoder.encode(`--${boundary}${crlf}Content-Disposition: form-data; name="${name}"${crlf}${crlf}${value}${crlf}`);
-        }
-
-        // 4. Start Real Stream
-        const sourceRes = await fetch(sourceUrl);
-        if(!sourceRes.body) throw new Error("Source has no body");
-
-        let loaded = 0;
-        const multipartStream = new ReadableStream({
-            async start(controller) {
-                // OSS Fields
-                controller.enqueue(createPart("OSSAccessKeyId", ossData.OSSAccessKeyId));
-                controller.enqueue(createPart("policy", ossData.policy));
-                controller.enqueue(createPart("Signature", ossData.signature));
-                controller.enqueue(createPart("key", ossData.key));
-                controller.enqueue(createPart("success_action_status", "200"));
-
-                // File Header
-                controller.enqueue(encoder.encode(`--${boundary}${crlf}Content-Disposition: form-data; name="file"; filename="video.mp4"${crlf}Content-Type: video/mp4${crlf}${crlf}`));
-
-                // Pipe Data
-                const reader = sourceRes.body.getReader();
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    loaded += value.length;
-                    
-                    // Update Job Status
-                    if (loaded % (5 * 1024 * 1024) < value.length || loaded === totalSize) {
-                        jobs.set(jobId, { status: 'uploading', uploaded: loaded, total: totalSize });
-                    }
-                    controller.enqueue(value);
-                }
-
-                // Footer
-                controller.enqueue(encoder.encode(`${crlf}--${boundary}--${crlf}`));
-                controller.close();
+        // Add all fields from Token JSON
+        for (const key in token) {
+            if (key !== 'hosts' && key !== 'id') {
+                formData.append(key, token[key]);
             }
-        });
+        }
 
-        // 5. Send to OSS with Explicit Content-Length
-        // Important: Some OSS requires Content-Length to be set if known
-        // We calculate rough size: FileSize + ~1KB overhead for headers
-        const estimatedSize = totalSize + 2048; 
+        if (!formData.has("key")) {
+             throw new Error("Token JSON missing 'key' field");
+        }
 
+        // 4. Filename Logic
+        // Token ထဲက Key အတိုင်းဖြစ်နေရင်တောင် Browser ကပို့တဲ့ filename header ကို ပြင်ပေးလိုက်တာပါ
+        let finalFilename = "video.mp4";
+        
+        if (customName) {
+            finalFilename = customName;
+        } else {
+            // No custom name? Try to get from key
+            const keyVal = formData.get("key")?.toString();
+            if(keyVal) finalFilename = keyVal.split('/').pop();
+        }
+
+        // Append File with specific filename (Important!)
+        formData.append("file", blob, finalFilename);
+
+        jobs.set(jobId, { status: 'uploading' });
+
+        // 5. Upload to OSS
         const uploadRes = await fetch(uploadUrl, {
             method: "POST",
             headers: {
-                "Content-Type": `multipart/form-data; boundary=${boundary}`,
-                // "Content-Length": estimatedSize.toString() // Deno manages this usually, but good to know
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             },
-            body: multipartStream
+            body: formData
         });
 
-        const respText = await uploadRes.text();
-
-        if (uploadRes.ok || uploadRes.status === 200 || uploadRes.status === 204) {
-             jobs.set(jobId, { status: 'completed', uploaded: totalSize, total: totalSize });
+        if (uploadRes.ok || uploadRes.status === 204 || uploadRes.status === 200) {
+             jobs.set(jobId, { status: 'completed', filename: finalFilename });
         } else {
-             throw new Error(`OSS Rejected (${uploadRes.status}): ${respText.substring(0, 150)}`);
+             const txt = await uploadRes.text();
+             throw new Error(`OSS Error ${uploadRes.status}: ${txt}`);
         }
 
     } catch (e) {
